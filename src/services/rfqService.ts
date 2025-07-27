@@ -16,13 +16,18 @@ export class RFQService {
   /**
    * Crear una nueva solicitud de cotización
    */
-  static async createRFQ(rfqData: RFQCreateRequest): Promise<RFQRequest> {
+  static async createRFQ(rfqData: RFQCreateRequest, requesterId?: string): Promise<RFQRequest> {
     try {
+      console.log('🔄 RFQService: Creando RFQ con datos:', rfqData);
+      console.log('🔄 RFQService: ID del solicitante:', requesterId);
+      
       // Obtener información del producto
       const product = await DatabaseService.getProductById(rfqData.productId);
+      console.log('🔍 RFQService: Producto encontrado:', product);
       
       if (!product) {
-        throw new Error('Producto no encontrado');
+        console.error('❌ RFQService: Producto no encontrado:', rfqData.productId);
+        throw new Error(`Producto no encontrado con ID: ${rfqData.productId}`);
       }
 
       // Calcular fecha límite de respuesta (5 días hábiles por defecto)
@@ -38,6 +43,7 @@ export class RFQService {
         supplierName: product.supplierName,
         
         // Información del solicitante
+        requesterId: requesterId || 'anonymous',
         requesterName: rfqData.requesterName,
         requesterEmail: rfqData.requesterEmail,
         requesterPhone: rfqData.requesterPhone,
@@ -64,7 +70,10 @@ export class RFQService {
         
         // Estimación de valor
         estimatedValue: product.unitPrice * rfqData.containerQuantity,
-        currency: product.currency
+        currency: product.currency,
+        
+        // Información de flete (opcional)
+        freightQuote: rfqData.freightQuote
       };
 
       // Guardar en la base de datos
@@ -96,6 +105,16 @@ export class RFQService {
    */
   static async getRFQById(rfqId: string): Promise<RFQRequest | null> {
     return await DatabaseService.getRFQById(rfqId);
+  }
+
+  /**
+   * Obtener RFQs con información de flete incluida
+   */
+  static async getRFQsWithFreight(filters?: RFQFilter): Promise<RFQRequest[]> {
+    const rfqs = await this.getAllRFQs(filters);
+    
+    // Filtrar solo RFQs que tienen información de flete
+    return rfqs.filter(rfq => rfq.freightQuote);
   }
 
   /**

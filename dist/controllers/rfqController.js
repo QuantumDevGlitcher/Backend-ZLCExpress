@@ -80,7 +80,10 @@ class RFQController {
                     });
                     return;
                 }
-                const newRFQ = yield rfqService_1.RFQService.createRFQ(rfqData);
+                // Extraer el ID del usuario desde los headers
+                const requesterId = req.headers['user-id'] || 'anonymous';
+                console.log('🔍 RFQController: Usuario solicitante:', requesterId);
+                const newRFQ = yield rfqService_1.RFQService.createRFQ(rfqData, requesterId);
                 res.status(201).json({
                     success: true,
                     message: 'Solicitud de cotización creada exitosamente',
@@ -130,6 +133,47 @@ class RFQController {
             }
             catch (error) {
                 console.error('Error en getRFQById:', error);
+                res.status(500).json({
+                    success: false,
+                    message: 'Error interno del servidor',
+                    error: 'INTERNAL_SERVER_ERROR'
+                });
+            }
+        });
+    }
+    /**
+     * Obtener RFQs con información de flete
+     * GET /api/rfq/freight
+     */
+    static getRFQsWithFreight(req, res) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const filters = {
+                    status: req.query.status ? req.query.status.split(',') : undefined,
+                    priority: req.query.priority ? req.query.priority.split(',') : undefined,
+                    supplierId: req.query.supplierId,
+                    requesterId: req.query.requesterId,
+                    productId: req.query.productId,
+                    containerType: req.query.containerType ? req.query.containerType.split(',') : undefined,
+                    incoterm: req.query.incoterm ? req.query.incoterm.split(',') : undefined,
+                    dateFrom: req.query.dateFrom,
+                    dateTo: req.query.dateTo,
+                    minValue: req.query.minValue ? parseFloat(req.query.minValue) : undefined,
+                    maxValue: req.query.maxValue ? parseFloat(req.query.maxValue) : undefined
+                };
+                // Limpiar filtros undefined
+                Object.keys(filters).forEach(key => filters[key] === undefined && delete filters[key]);
+                const rfqs = yield rfqService_1.RFQService.getRFQsWithFreight(filters);
+                res.json({
+                    success: true,
+                    message: 'RFQs con información de flete obtenidas exitosamente',
+                    data: rfqs,
+                    total: rfqs.length,
+                    filters: filters
+                });
+            }
+            catch (error) {
+                console.error('Error en getRFQsWithFreight:', error);
                 res.status(500).json({
                     success: false,
                     message: 'Error interno del servidor',

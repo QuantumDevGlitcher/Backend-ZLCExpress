@@ -79,7 +79,11 @@ export class RFQController {
         return;
       }
 
-      const newRFQ = await RFQService.createRFQ(rfqData);
+      // Extraer el ID del usuario desde los headers
+      const requesterId = req.headers['user-id'] as string || 'anonymous';
+      console.log('🔍 RFQController: Usuario solicitante:', requesterId);
+
+      const newRFQ = await RFQService.createRFQ(rfqData, requesterId);
 
       res.status(201).json({
         success: true,
@@ -133,6 +137,51 @@ export class RFQController {
 
     } catch (error) {
       console.error('Error en getRFQById:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: 'INTERNAL_SERVER_ERROR'
+      });
+    }
+  }
+
+  /**
+   * Obtener RFQs con información de flete
+   * GET /api/rfq/freight
+   */
+  static async getRFQsWithFreight(req: Request, res: Response): Promise<void> {
+    try {
+      const filters: RFQFilter = {
+        status: req.query.status ? (req.query.status as string).split(',') : undefined,
+        priority: req.query.priority ? (req.query.priority as string).split(',') : undefined,
+        supplierId: req.query.supplierId as string,
+        requesterId: req.query.requesterId as string,
+        productId: req.query.productId as string,
+        containerType: req.query.containerType ? (req.query.containerType as string).split(',') : undefined,
+        incoterm: req.query.incoterm ? (req.query.incoterm as string).split(',') : undefined,
+        dateFrom: req.query.dateFrom as string,
+        dateTo: req.query.dateTo as string,
+        minValue: req.query.minValue ? parseFloat(req.query.minValue as string) : undefined,
+        maxValue: req.query.maxValue ? parseFloat(req.query.maxValue as string) : undefined
+      };
+
+      // Limpiar filtros undefined
+      Object.keys(filters).forEach(key => 
+        filters[key as keyof RFQFilter] === undefined && delete filters[key as keyof RFQFilter]
+      );
+
+      const rfqs = await RFQService.getRFQsWithFreight(filters);
+
+      res.json({
+        success: true,
+        message: 'RFQs con información de flete obtenidas exitosamente',
+        data: rfqs,
+        total: rfqs.length,
+        filters: filters
+      });
+
+    } catch (error) {
+      console.error('Error en getRFQsWithFreight:', error);
       res.status(500).json({
         success: false,
         message: 'Error interno del servidor',

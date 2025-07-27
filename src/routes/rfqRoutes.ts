@@ -18,6 +18,11 @@ router.get('/stats',
   RFQController.getRFQStats
 );                                                                     // Obtener estadísticas (debe ir antes de /:id)
 
+router.get('/freight', 
+  RFQValidationMiddleware.validateQueryFilters,
+  RFQController.getRFQsWithFreight
+);                                                                     // Obtener RFQs con información de flete
+
 router.get('/', 
   RFQValidationMiddleware.validateQueryFilters,
   RFQController.getAllRFQs

@@ -1,0 +1,324 @@
+// ================================================================
+// ESQUEMA PRISMA - Sistema de Usuarios ZLCExpress
+// ================================================================
+// Descripción: Esquema completo para PostgreSQL con ORM Prisma
+// Fecha: 2025-07-26
+// Versión: 1.0
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================================================
+// MODELO PRINCIPAL: User
+// ================================================================
+
+model User {
+  // Clave primaria
+  id        Int      @id @default(autoincrement())
+
+  // Credenciales de acceso
+  email     String   @unique @db.VarChar(255)
+  password  String   @db.VarChar(255)
+
+  // Información de la empresa
+  companyName      String @map("company_name") @db.VarChar(255)
+  taxId            String @map("tax_id") @db.VarChar(50)
+  operationCountry String @map("operation_country") @db.VarChar(100)
+  industry         String @db.VarChar(100)
+
+  // Contacto principal
+  contactName     String @map("contact_name") @db.VarChar(255)
+  contactPosition String @map("contact_position") @db.VarChar(100)
+  contactPhone    String @map("contact_phone") @db.VarChar(20)
+
+  // Dirección fiscal
+  fiscalAddress String @map("fiscal_address") @db.Text
+  country       String @db.VarChar(100)
+  state         String @db.VarChar(100)
+  city          String @db.VarChar(100)
+  postalCode    String @map("postal_code") @db.VarChar(10)
+
+  // Estado del usuario
+  isVerified         Boolean            @default(false) @map("is_verified")
+  verificationStatus VerificationStatus @default(PENDING) @map("verification_status")
+  userType          UserType           @default(BUYER) @map("user_type")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  sessions UserSession[]
+  authLogs AuthLog[]
+  products Product[]
+  orders   Order[]
+  orderDetails OrderDetail[]
+
+  // Índices
+  @@index([email])
+  @@index([verificationStatus])
+  @@index([isVerified])
+  @@index([userType])
+  @@index([taxId])
+  @@index([companyName])
+  @@index([operationCountry])
+  @@index([createdAt])
+  @@map("users")
+}
+
+// ================================================================
+// MODELO: UserSession (para JWT y control de sesiones)
+// ================================================================
+
+model UserSession {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  tokenHash  String   @map("token_hash") @db.VarChar(255)
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastUsedAt DateTime @default(now()) @updatedAt @map("last_used_at")
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  isActive   Boolean  @default(true) @map("is_active")
+
+  // Relación
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Índices
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@index([isActive])
+  @@map("user_sessions")
+}
+
+// ================================================================
+// MODELO: AuthLog (logs de auditoría)
+// ================================================================
+
+model AuthLog {
+  id           Int         @id @default(autoincrement())
+  userId       Int?        @map("user_id")
+  action       AuthAction
+  ipAddress    String?     @map("ip_address") @db.VarChar(45)
+  userAgent    String?     @map("user_agent") @db.Text
+  success      Boolean     @default(true)
+  errorMessage String?     @map("error_message") @db.Text
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  // Relación (nullable para failed logins)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // Índices
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([success])
+  @@map("auth_logs")
+}
+
+// ================================================================
+// MODELO: Category (categorías de productos)
+// ================================================================
+
+model Category {
+  id          Int       @id @default(autoincrement())
+  name        String    @db.VarChar(100)
+  description String?   @db.Text
+  image       String?   @db.VarChar(255)
+  isActive    Boolean   @default(true) @map("is_active")
+  parentId    Int?      @map("parent_id")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  // Relaciones
+  parent     Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children   Category[] @relation("CategoryHierarchy")
+  products   Product[]
+
+  // Índices
+  @@index([name])
+  @@index([isActive])
+  @@index([parentId])
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+// ================================================================
+// MODELO: Product (productos/lotes de proveedores)
+// ================================================================
+
+model Product {
+  id                 Int       @id @default(autoincrement())
+  title              String    @db.VarChar(255)
+  description        String?   @db.Text
+  categoryId         Int       @map("category_id")
+  supplierId         Int       @map("supplier_id")
+  price              Decimal   @db.Decimal(10, 2)
+  currency           String    @default("USD") @db.VarChar(3)
+  minQuantity        Int       @map("min_quantity")
+  maxQuantity        Int?      @map("max_quantity")
+  unit               String    @db.VarChar(50)
+  incoterm           String    @db.VarChar(20)
+  originCountry      String    @map("origin_country") @db.VarChar(100)
+  images             String[]  @db.VarChar(255)
+  specifications     Json?
+  isActive           Boolean   @default(true) @map("is_active")
+  
+  // Nuevos campos para compatibilidad con frontend
+  containerType      String    @default("40GP") @map("container_type") @db.VarChar(10)
+  unitsPerContainer  Int       @default(0) @map("units_per_container")
+  moq                Int       @default(0) // Minimum Order Quantity
+  unitPrice          Decimal   @default(0) @map("unit_price") @db.Decimal(10, 2)
+  pricePerContainer  Decimal   @default(0) @map("price_per_container") @db.Decimal(12, 2)
+  grossWeight        Int       @default(0) @map("gross_weight") // en kg
+  netWeight          Int       @default(0) @map("net_weight") // en kg
+  volume             Decimal   @default(0) @db.Decimal(8, 2) // en m³
+  packagingType      String?   @map("packaging_type") @db.VarChar(255)
+  stockContainers    Int       @default(0) @map("stock_containers")
+  isNegotiable       Boolean   @default(false) @map("is_negotiable")
+  allowsCustomOrders Boolean   @default(false) @map("allows_custom_orders")
+  productionTime     Int       @default(0) @map("production_time") // días
+  packagingTime      Int       @default(0) @map("packaging_time") // días
+  totalViews         Int       @default(0) @map("total_views")
+  totalInquiries     Int       @default(0) @map("total_inquiries")
+  
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relaciones
+  category     Category      @relation(fields: [categoryId], references: [id])
+  supplier     User          @relation(fields: [supplierId], references: [id])
+  orderDetails OrderDetail[]
+
+  // Índices
+  @@index([title])
+  @@index([categoryId])
+  @@index([supplierId])
+  @@index([isActive])
+  @@index([price])
+  @@index([pricePerContainer])
+  @@index([containerType])
+  @@index([moq])
+  @@index([stockContainers])
+  @@index([originCountry])
+  @@index([createdAt])
+  @@map("products")
+}
+
+// ================================================================
+// MODELO: Order (órdenes/cotizaciones)
+// ================================================================
+
+model Order {
+  id              Int         @id @default(autoincrement())
+  orderNumber     String      @unique @map("order_number") @db.VarChar(50)
+  buyerId         Int         @map("buyer_id")
+  status          OrderStatus @default(PENDING)
+  totalAmount     Decimal     @db.Decimal(12, 2)
+  currency        String      @db.VarChar(3)
+  paymentTerms    String?     @map("payment_terms") @db.Text
+  deliveryTerms   String?     @map("delivery_terms") @db.Text
+  notes           String?     @db.Text
+  expiresAt       DateTime?   @map("expires_at")
+  confirmedAt     DateTime?   @map("confirmed_at")
+  shippedAt       DateTime?   @map("shipped_at")
+  deliveredAt     DateTime?   @map("delivered_at")
+  cancelledAt     DateTime?   @map("cancelled_at")
+  cancellationReason String? @map("cancellation_reason") @db.Text
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  // Relaciones
+  buyer        User          @relation(fields: [buyerId], references: [id])
+  orderDetails OrderDetail[]
+
+  // Índices
+  @@index([orderNumber])
+  @@index([buyerId])
+  @@index([status])
+  @@index([totalAmount])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@map("orders")
+}
+
+// ================================================================
+// MODELO: OrderDetail (detalles de orden por producto)
+// ================================================================
+
+model OrderDetail {
+  id               Int     @id @default(autoincrement())
+  orderId          Int     @map("order_id")
+  productId        Int     @map("product_id")
+  supplierId       Int     @map("supplier_id")
+  quantity         Int
+  unitPrice        Decimal @db.Decimal(10, 2)
+  totalPrice       Decimal @db.Decimal(12, 2)
+  currency         String  @db.VarChar(3)
+  specifications   Json?
+  notes            String? @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  order    Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product  Product @relation(fields: [productId], references: [id])
+  supplier User    @relation(fields: [supplierId], references: [id])
+
+  // Índices
+  @@index([orderId])
+  @@index([productId])
+  @@index([supplierId])
+  @@index([totalPrice])
+  @@map("order_details")
+}
+
+// ================================================================
+// ENUMS
+// ================================================================
+
+enum VerificationStatus {
+  PENDING  @map("pending")
+  VERIFIED @map("verified")
+  REJECTED @map("rejected")
+
+  @@map("verification_status")
+}
+
+enum UserType {
+  BUYER    @map("buyer")
+  SUPPLIER @map("supplier")
+  BOTH     @map("both")
+
+  @@map("user_type")
+}
+
+enum AuthAction {
+  LOGIN           @map("login")
+  LOGOUT          @map("logout")
+  FAILED_LOGIN    @map("failed_login")
+  TOKEN_REFRESH   @map("token_refresh")
+  PASSWORD_CHANGE @map("password_change")
+
+  @@map("auth_action")
+}
+
+enum OrderStatus {
+  PENDING    @map("pending")
+  CONFIRMED  @map("confirmed")
+  PROCESSING @map("processing")
+  SHIPPED    @map("shipped")
+  DELIVERED  @map("delivered")
+  CANCELLED  @map("cancelled")
+  EXPIRED    @map("expired")
+
+  @@map("order_status")
+}

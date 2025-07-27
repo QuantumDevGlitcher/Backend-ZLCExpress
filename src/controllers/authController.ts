@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AuthService } from '../services/authService';
+import { databaseService } from '../services/prismaService';
 
 export const login = async (req: Request, res: Response) => {
   try {
@@ -22,27 +22,118 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    const loginResult = await AuthService.login({ email, password });
-    
-    if (!loginResult.success) {
-      return res.status(401).json(loginResult);
+    // Obtener datos de sesión
+    const sessionData = {
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+    };
+
+    // Autenticar usuario con Prisma
+    const authResult = await databaseService.authenticateUser(
+      { email, password },
+      sessionData
+    );
+
+    if (!authResult) {
+      return res.status(401).json({
+        success: false,
+        message: 'Credenciales inválidas'
+      });
     }
 
-    // Login exitoso
-    res.json(loginResult);
+    const { user, token } = authResult;
+
+    // Respuesta exitosa (sin password)
+    const { password: _, ...userWithoutPassword } = user;
+    
+    res.json({
+      success: true,
+      message: 'Login exitoso',
+      user: userWithoutPassword,
+      token,
+      expiresIn: '7d'
+    });
     
   } catch (error: any) {
-    console.error('Error en login:', error);
+    console.error('❌ Error en login:', error);
+    
     res.status(500).json({ 
       success: false,
-      message: 'Error interno del servidor' 
+      message: 'Error interno del servidor',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+export const register = async (req: Request, res: Response) => {
+  try {
+    const userData = req.body;
+    
+    // Validaciones requeridas
+    const requiredFields = [
+      'email', 'password', 'companyName', 'taxId', 'operationCountry',
+      'industry', 'contactName', 'contactPosition', 'contactPhone',
+      'fiscalAddress', 'country', 'state', 'city', 'postalCode'
+    ];
+
+    const missingFields = requiredFields.filter(field => !userData[field]);
+    
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Campos requeridos faltantes: ${missingFields.join(', ')}`
+      });
+    }
+
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userData.email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Formato de email inválido'
+      });
+    }
+
+    // Validar longitud de contraseña
+    if (userData.password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'La contraseña debe tener al menos 6 caracteres'
+      });
+    }
+
+    // Crear usuario con Prisma
+    const newUser = await databaseService.createUser(userData);
+    
+    // Respuesta exitosa (sin password)
+    const { password: _, ...userWithoutPassword } = newUser;
+    
+    res.status(201).json({
+      success: true,
+      message: 'Usuario registrado exitosamente',
+      user: userWithoutPassword
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Error en registro:', error);
+    
+    if (error.message === 'El email ya está registrado') {
+      return res.status(409).json({
+        success: false,
+        message: error.message
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      message: 'Error interno del servidor',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
 export const getProfile = async (req: Request, res: Response) => {
   try {
-    // En una implementación real, extraerías el userId del token JWT del header Authorization
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -52,52 +143,75 @@ export const getProfile = async (req: Request, res: Response) => {
       });
     }
 
-    const token = authHeader.substring(7); // Remover 'Bearer '
-    const userId = await AuthService.validateToken(token);
+    const token = authHeader.substring(7); // Remover "Bearer "
     
-    if (!userId) {
+    // Verificar token y obtener usuario con Prisma
+    const user = await databaseService.verifyToken(token);
+    
+    if (!user) {
       return res.status(401).json({
         success: false,
         message: 'Token inválido o expirado'
       });
     }
 
-    const user = await AuthService.getProfile(userId);
+    // Respuesta exitosa (sin password)
+    const { password: _, ...userWithoutPassword } = user;
     
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuario no encontrado'
-      });
-    }
-
     res.json({
       success: true,
-      user
+      data: {
+        user: userWithoutPassword
+      }
     });
     
   } catch (error: any) {
-    console.error('Error al obtener perfil:', error);
+    console.error('❌ Error obteniendo perfil:', error);
+    
     res.status(500).json({ 
       success: false,
-      message: 'Error interno del servidor' 
+      message: 'Error interno del servidor'
     });
   }
 };
 
 export const logout = async (req: Request, res: Response) => {
   try {
-    // En una implementación real con JWT, aquí podrías invalidar el token
-    // o agregarlo a una blacklist
-    res.json({ 
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token de autorización requerido'
+      });
+    }
+
+    const token = authHeader.substring(7);
+    
+    // Verificar token para obtener userId
+    const user = await databaseService.verifyToken(token);
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token inválido'
+      });
+    }
+
+    // Hacer logout (desactivar sesión)
+    await databaseService.logoutUser(user.id, token);
+    
+    res.json({
       success: true,
-      message: 'Sesión cerrada exitosamente' 
+      message: 'Logout exitoso'
     });
+    
   } catch (error: any) {
-    console.error('Error en logout:', error);
+    console.error('❌ Error en logout:', error);
+    
     res.status(500).json({ 
       success: false,
-      message: 'Error interno del servidor' 
+      message: 'Error interno del servidor'
     });
   }
 };
@@ -116,9 +230,11 @@ export const validateSession = async (req: Request, res: Response) => {
     }
 
     const token = authHeader.substring(7);
-    const userId = await AuthService.validateToken(token);
     
-    if (!userId) {
+    // Verificar token con Prisma
+    const user = await databaseService.verifyToken(token);
+    
+    if (!user) {
       return res.status(401).json({
         success: false,
         valid: false,
@@ -129,11 +245,15 @@ export const validateSession = async (req: Request, res: Response) => {
     res.json({
       success: true,
       valid: true,
-      message: 'Sesión válida'
+      message: 'Sesión válida',
+      data: {
+        userId: user.id,
+        email: user.email
+      }
     });
     
   } catch (error: any) {
-    console.error('Error al validar sesión:', error);
+    console.error('❌ Error al validar sesión:', error);
     res.status(500).json({ 
       success: false,
       valid: false,

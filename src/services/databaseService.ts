@@ -45,7 +45,7 @@ const database: DatabaseSchema = {
   notifications: [],
   products: [
     {
-      id: 'prod-1',
+      id: 'prod_1',
       name: 'Blusas de manga larga casuales',
       description: '4500 blusas algodón premium de manga larga, diseño casual elegante. Perfectas para distribuidores que buscan prendas versátiles y de calidad. Incluye variedad de tallas y colores populares.',
       supplierId: 'supplier_1',
@@ -59,7 +59,7 @@ const database: DatabaseSchema = {
       imageUrl: '/api/placeholder/400/300'
     },
     {
-      id: 'prod-2',
+      id: 'prod_2',
       name: 'Electrónicos Smart TV 55"',
       description: 'Smart TV LED 4K Ultra HD de 55 pulgadas con sistema Android TV integrado.',
       supplierId: 'supplier_2',
@@ -72,7 +72,7 @@ const database: DatabaseSchema = {
       stockContainers: 15
     },
     {
-      id: 'prod-3',
+      id: 'prod_3',
       name: 'Equipos de Construcción',
       description: 'Herramientas y equipos para construcción de alta calidad.',
       supplierId: 'supplier_3',
@@ -129,10 +129,23 @@ let nextNotificationId = 1;
 export class DatabaseService {
   
   /**
+   * Obtener todos los productos (para debugging)
+   */
+  static async getAllProducts(): Promise<ProductInfo[]> {
+    return database.products;
+  }
+
+  /**
    * Obtener información de producto por ID
    */
   static async getProductById(productId: string): Promise<ProductInfo | null> {
-    return database.products.find(product => product.id === productId) || null;
+    console.log('🔍 DatabaseService: Buscando producto con ID:', productId);
+    console.log('🗄️ DatabaseService: Productos disponibles:', database.products.map(p => ({ id: p.id, name: p.name })));
+    
+    const product = database.products.find(product => product.id === productId) || null;
+    console.log('📦 DatabaseService: Producto encontrado:', product);
+    
+    return product;
   }
 
   /**
@@ -155,7 +168,10 @@ export class DatabaseService {
       updatedAt: new Date().toISOString()
     };
 
+    console.log('💾 DatabaseService.createRFQ: Guardando nueva RFQ:', newRFQ);
     database.rfqs.push(newRFQ);
+    console.log('💾 DatabaseService.createRFQ: Total RFQs después de guardar:', database.rfqs.length);
+    console.log('💾 DatabaseService.createRFQ: Última RFQ guardada:', database.rfqs[database.rfqs.length - 1]);
     
     // Actualizar estadísticas del proveedor
     const supplier = await this.getSupplierById(newRFQ.supplierId);
@@ -287,22 +303,36 @@ export class DatabaseService {
     minValue?: number;
     maxValue?: number;
   }): Promise<RFQRequest[]> {
+    console.log('🔍 DatabaseService.searchRFQs: Criterios de búsqueda:', criteria);
+    console.log('🔍 DatabaseService.searchRFQs: Total RFQs en base de datos:', database.rfqs.length);
+    console.log('🔍 DatabaseService.searchRFQs: RFQs existentes:', database.rfqs.map(rfq => ({ id: rfq.id, requesterId: rfq.requesterId })));
+    
     let results = [...database.rfqs];
 
     if (criteria.status) {
+      console.log('🔍 Filtrando por status:', criteria.status);
       results = results.filter(rfq => criteria.status!.includes(rfq.status));
+      console.log('🔍 Después de filtrar por status:', results.length);
     }
 
     if (criteria.supplierId) {
+      console.log('🔍 Filtrando por supplierId:', criteria.supplierId);
       results = results.filter(rfq => rfq.supplierId === criteria.supplierId);
+      console.log('🔍 Después de filtrar por supplierId:', results.length);
     }
 
     if (criteria.productId) {
+      console.log('🔍 Filtrando por productId:', criteria.productId);
       results = results.filter(rfq => rfq.productId === criteria.productId);
+      console.log('🔍 Después de filtrar por productId:', results.length);
     }
 
     if (criteria.requesterId) {
+      console.log('🔍 Filtrando por requesterId:', criteria.requesterId);
+      console.log('🔍 RFQs antes del filtro:', results.map(rfq => ({ id: rfq.id, requesterId: rfq.requesterId })));
       results = results.filter(rfq => rfq.requesterId === criteria.requesterId);
+      console.log('🔍 Después de filtrar por requesterId:', results.length);
+      console.log('🔍 RFQs que pasaron el filtro:', results.map(rfq => ({ id: rfq.id, requesterId: rfq.requesterId })));
     }
 
     if (criteria.dateFrom) {
@@ -324,13 +354,6 @@ export class DatabaseService {
     }
 
     return results;
-  }
-
-  /**
-   * Obtener todos los productos
-   */
-  static async getAllProducts(): Promise<ProductInfo[]> {
-    return [...database.products];
   }
 
   /**

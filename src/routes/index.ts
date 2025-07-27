@@ -5,6 +5,7 @@ import orderRoutes from './orderRoutes';
 import authRoutes from './authRoutes';
 import categoryRoutes from './categoryRoutes';
 import rfqRoutes from './rfqRoutes';
+import freightRoutes from './freightRoutes';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.use('/products', productRoutes);
 router.use('/cart', cartRoutes);
 router.use('/orders', orderRoutes);
 router.use('/rfq', rfqRoutes);
+router.use('/freight', freightRoutes);
 
 // Ruta de prueba
 router.get('/test', (req, res) => {

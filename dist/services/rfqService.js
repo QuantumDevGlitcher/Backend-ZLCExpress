@@ -16,13 +16,17 @@ class RFQService {
     /**
      * Crear una nueva solicitud de cotización
      */
-    static createRFQ(rfqData) {
+    static createRFQ(rfqData, requesterId) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
+                console.log('🔄 RFQService: Creando RFQ con datos:', rfqData);
+                console.log('🔄 RFQService: ID del solicitante:', requesterId);
                 // Obtener información del producto
                 const product = yield databaseService_1.DatabaseService.getProductById(rfqData.productId);
+                console.log('🔍 RFQService: Producto encontrado:', product);
                 if (!product) {
-                    throw new Error('Producto no encontrado');
+                    console.error('❌ RFQService: Producto no encontrado:', rfqData.productId);
+                    throw new Error(`Producto no encontrado con ID: ${rfqData.productId}`);
                 }
                 // Calcular fecha límite de respuesta (5 días hábiles por defecto)
                 const responseDeadline = new Date();
@@ -35,6 +39,7 @@ class RFQService {
                     supplierId: product.supplierId,
                     supplierName: product.supplierName,
                     // Información del solicitante
+                    requesterId: requesterId || 'anonymous',
                     requesterName: rfqData.requesterName,
                     requesterEmail: rfqData.requesterEmail,
                     requesterPhone: rfqData.requesterPhone,
@@ -56,7 +61,9 @@ class RFQService {
                     priority: rfqData.priority || 'medium',
                     // Estimación de valor
                     estimatedValue: product.unitPrice * rfqData.containerQuantity,
-                    currency: product.currency
+                    currency: product.currency,
+                    // Información de flete (opcional)
+                    freightQuote: rfqData.freightQuote
                 };
                 // Guardar en la base de datos
                 const newRFQ = yield databaseService_1.DatabaseService.createRFQ(rfqToCreate);
@@ -86,6 +93,16 @@ class RFQService {
     static getRFQById(rfqId) {
         return __awaiter(this, void 0, void 0, function* () {
             return yield databaseService_1.DatabaseService.getRFQById(rfqId);
+        });
+    }
+    /**
+     * Obtener RFQs con información de flete incluida
+     */
+    static getRFQsWithFreight(filters) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const rfqs = yield this.getAllRFQs(filters);
+            // Filtrar solo RFQs que tienen información de flete
+            return rfqs.filter(rfq => rfq.freightQuote);
         });
     }
     /**

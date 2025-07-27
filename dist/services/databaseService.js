@@ -98,11 +98,23 @@ let nextRFQId = 1;
 let nextNotificationId = 1;
 class DatabaseService {
     /**
+     * Obtener todos los productos (para debugging)
+     */
+    static getAllProducts() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return database.products;
+        });
+    }
+    /**
      * Obtener información de producto por ID
      */
     static getProductById(productId) {
         return __awaiter(this, void 0, void 0, function* () {
-            return database.products.find(product => product.id === productId) || null;
+            console.log('🔍 DatabaseService: Buscando producto con ID:', productId);
+            console.log('🗄️ DatabaseService: Productos disponibles:', database.products.map(p => ({ id: p.id, name: p.name })));
+            const product = database.products.find(product => product.id === productId) || null;
+            console.log('📦 DatabaseService: Producto encontrado:', product);
+            return product;
         });
     }
     /**
@@ -120,7 +132,10 @@ class DatabaseService {
         return __awaiter(this, void 0, void 0, function* () {
             const rfqId = `RFQ-${Date.now()}-${nextRFQId++}`;
             const newRFQ = Object.assign(Object.assign({}, rfqData), { id: rfqId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+            console.log('💾 DatabaseService.createRFQ: Guardando nueva RFQ:', newRFQ);
             database.rfqs.push(newRFQ);
+            console.log('💾 DatabaseService.createRFQ: Total RFQs después de guardar:', database.rfqs.length);
+            console.log('💾 DatabaseService.createRFQ: Última RFQ guardada:', database.rfqs[database.rfqs.length - 1]);
             // Actualizar estadísticas del proveedor
             const supplier = yield this.getSupplierById(newRFQ.supplierId);
             if (supplier) {
@@ -226,18 +241,31 @@ class DatabaseService {
      */
     static searchRFQs(criteria) {
         return __awaiter(this, void 0, void 0, function* () {
+            console.log('🔍 DatabaseService.searchRFQs: Criterios de búsqueda:', criteria);
+            console.log('🔍 DatabaseService.searchRFQs: Total RFQs en base de datos:', database.rfqs.length);
+            console.log('🔍 DatabaseService.searchRFQs: RFQs existentes:', database.rfqs.map(rfq => ({ id: rfq.id, requesterId: rfq.requesterId })));
             let results = [...database.rfqs];
             if (criteria.status) {
+                console.log('🔍 Filtrando por status:', criteria.status);
                 results = results.filter(rfq => criteria.status.includes(rfq.status));
+                console.log('🔍 Después de filtrar por status:', results.length);
             }
             if (criteria.supplierId) {
+                console.log('🔍 Filtrando por supplierId:', criteria.supplierId);
                 results = results.filter(rfq => rfq.supplierId === criteria.supplierId);
+                console.log('🔍 Después de filtrar por supplierId:', results.length);
             }
             if (criteria.productId) {
+                console.log('🔍 Filtrando por productId:', criteria.productId);
                 results = results.filter(rfq => rfq.productId === criteria.productId);
+                console.log('🔍 Después de filtrar por productId:', results.length);
             }
             if (criteria.requesterId) {
+                console.log('🔍 Filtrando por requesterId:', criteria.requesterId);
+                console.log('🔍 RFQs antes del filtro:', results.map(rfq => ({ id: rfq.id, requesterId: rfq.requesterId })));
                 results = results.filter(rfq => rfq.requesterId === criteria.requesterId);
+                console.log('🔍 Después de filtrar por requesterId:', results.length);
+                console.log('🔍 RFQs que pasaron el filtro:', results.map(rfq => ({ id: rfq.id, requesterId: rfq.requesterId })));
             }
             if (criteria.dateFrom) {
                 const fromDate = new Date(criteria.dateFrom);
@@ -254,14 +282,6 @@ class DatabaseService {
                 results = results.filter(rfq => (rfq.estimatedValue || 0) <= criteria.maxValue);
             }
             return results;
-        });
-    }
-    /**
-     * Obtener todos los productos
-     */
-    static getAllProducts() {
-        return __awaiter(this, void 0, void 0, function* () {
-            return [...database.products];
         });
     }
     /**

@@ -1,6 +1,14 @@
 import { Request, Response } from 'express';
 import { OrderService } from '../services/orderService';
 
+// Interface para filtros de orden
+interface OrderFilters {
+  status?: string;
+  userId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
 export const getOrders = async (req: Request, res: Response) => {
   try {
     const userId = "1"; // Mock

@@ -10,160 +10,339 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProductService = void 0;
-// Mock database con productos compatibles con el frontend
-const mockProducts = [
-    {
-        id: "prod_1",
-        name: 'Camisetas 100% Algodón Premium',
-        code: 'TEE-001',
-        categoryId: 'cat_clothing',
-        supplierId: 'supplier_1',
-        description: 'Lote premium de 5000 camisetas 100% algodón de alta calidad. Incluye una mezcla cuidadosamente seleccionada de tallas desde S hasta XL en una variedad de colores modernos y atemporales.',
-        containerType: '20GP',
-        unitsPerContainer: 5000,
-        moq: 1,
-        unitPrice: 2.50,
-        pricePerContainer: 12500,
-        currency: 'USD',
-        incoterm: 'FOB ZLC',
-        grossWeight: 12000,
-        netWeight: 10000,
-        volume: 28,
-        packagingType: 'Cajas de cartón',
-        stockContainers: 25,
-        isNegotiable: true,
-        allowsCustomOrders: true,
-        productionTime: 18,
-        packagingTime: 3,
-        status: 'active',
-        isPublished: true,
-        images: ['/api/placeholder/400/300'],
-        colors: ['Blanco', 'Negro', 'Gris', 'Azul marino'],
-        sizes: ['S', 'M', 'L', 'XL'],
-        materials: ['100% Algodón'],
-        tags: ['ropa', 'casual', 'básicos'],
-        totalViews: 1250,
-        totalInquiries: 89,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        supplier: {
-            id: 'supplier_1',
-            companyName: 'Textiles Premium SA',
-            isVerified: true,
-            location: 'Guangzhou, China'
-        }
-    },
-    {
-        id: "prod_2",
-        name: 'Blusas de manga larga casuales',
-        code: 'BLU-002',
-        categoryId: 'cat_clothing',
-        supplierId: 'supplier_2',
-        description: '4500 blusas algodón premium de manga larga, diseño casual elegante. Perfectas para distribuidores que buscan prendas versátiles y de calidad. Incluye variedad de tallas y colores populares.',
-        containerType: '20GP',
-        unitsPerContainer: 4500,
-        moq: 1,
-        unitPrice: 4.00,
-        pricePerContainer: 18000,
-        currency: 'USD',
-        incoterm: 'CIF',
-        grossWeight: 15000,
-        netWeight: 13500,
-        volume: 30,
-        packagingType: 'Bolsas individuales',
-        stockContainers: 15,
-        isNegotiable: false,
-        allowsCustomOrders: true,
-        productionTime: 22,
-        packagingTime: 4,
-        status: 'active',
-        isPublished: true,
-        images: ['/api/placeholder/400/300'],
-        colors: ['Blanco', 'Beige', 'Rosa', 'Azul claro'],
-        sizes: ['S', 'M', 'L', 'XL'],
-        materials: ['95% Algodón', '5% Elastano'],
-        tags: ['ropa', 'mujer', 'casual'],
-        totalViews: 980,
-        totalInquiries: 67,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        supplier: {
-            id: 'supplier_2',
-            companyName: 'Fashion World Ltd',
-            isVerified: true,
-            location: 'Shenzhen, China'
-        }
-    },
-    {
-        id: "prod_3",
-        name: 'Pantalones deportivos unisex',
-        code: 'PAN-003',
-        categoryId: 'cat_clothing',
-        supplierId: 'supplier_1',
-        description: 'Lote de 3000 pantalones deportivos unisex de alta calidad. Material transpirable y resistente, ideales para actividades deportivas y uso casual.',
-        containerType: '20GP',
-        unitsPerContainer: 3000,
-        moq: 1,
-        unitPrice: 8.50,
-        pricePerContainer: 25500,
-        currency: 'USD',
-        incoterm: 'FOB ZLC',
-        grossWeight: 18000,
-        netWeight: 16500,
-        volume: 32,
-        packagingType: 'Cajas de cartón',
-        stockContainers: 8,
-        isNegotiable: true,
-        allowsCustomOrders: false,
-        productionTime: 25,
-        packagingTime: 5,
-        status: 'active',
-        isPublished: true,
-        images: ['/api/placeholder/400/300'],
-        colors: ['Negro', 'Gris', 'Azul marino', 'Verde militar'],
-        sizes: ['S', 'M', 'L', 'XL', 'XXL'],
-        materials: ['80% Poliéster', '20% Algodón'],
-        tags: ['ropa', 'deportiva', 'unisex'],
-        totalViews: 756,
-        totalInquiries: 45,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        supplier: {
-            id: 'supplier_1',
-            companyName: 'Textiles Premium SA',
-            isVerified: true,
-            location: 'Guangzhou, China'
-        }
-    }
-];
+const client_1 = require("@prisma/client");
+const prisma = new client_1.PrismaClient();
 class ProductService {
-    static getAllProducts() {
+    static getAllProducts(filters) {
         return __awaiter(this, void 0, void 0, function* () {
-            // Simular delay de base de datos
-            yield new Promise(resolve => setTimeout(resolve, 100));
-            return mockProducts;
+            try {
+                const { page = 1, limit = 20, search, category, priceMin, priceMax, containerType, incoterm, isNegotiable, allowsCustomOrders, sortBy = 'createdAt', sortOrder = 'desc' } = filters || {};
+                // Construir filtros dinámicos
+                const where = {};
+                if (search) {
+                    where.OR = [
+                        { title: { contains: search, mode: 'insensitive' } },
+                        { description: { contains: search, mode: 'insensitive' } }
+                    ];
+                }
+                if (category) {
+                    where.categoryId = parseInt(category);
+                }
+                if (priceMin !== undefined) {
+                    where.pricePerContainer = Object.assign(Object.assign({}, where.pricePerContainer), { gte: priceMin });
+                }
+                if (priceMax !== undefined) {
+                    where.pricePerContainer = Object.assign(Object.assign({}, where.pricePerContainer), { lte: priceMax });
+                }
+                if (containerType && containerType !== 'all') {
+                    where.containerType = containerType;
+                }
+                if (incoterm && incoterm !== 'all') {
+                    where.incoterm = incoterm;
+                }
+                // Calcular offset para paginación
+                const skip = (page - 1) * limit;
+                // Ordenamiento
+                const orderBy = {};
+                if (sortBy === 'pricePerContainer') {
+                    orderBy.pricePerContainer = sortOrder;
+                }
+                else if (sortBy === 'name') {
+                    orderBy.title = sortOrder;
+                }
+                else {
+                    orderBy[sortBy] = sortOrder;
+                }
+                // Ejecutar consultas
+                const [products, total] = yield Promise.all([
+                    prisma.product.findMany({
+                        where,
+                        include: {
+                            category: true,
+                            supplier: {
+                                select: {
+                                    id: true,
+                                    companyName: true,
+                                    isVerified: true,
+                                    country: true,
+                                    city: true
+                                }
+                            }
+                        },
+                        orderBy,
+                        skip,
+                        take: limit
+                    }),
+                    prisma.product.count({ where })
+                ]);
+                // Transformar datos para el frontend
+                const transformedProducts = products.map((product) => {
+                    const specs = product.specifications || {};
+                    // FORZAR NOMBRE VÁLIDO - NUNCA UNDEFINED
+                    let productName = product.title || '';
+                    if (!productName || productName.trim() === '' || productName === 'undefined') {
+                        productName = `Producto ID ${product.id}`;
+                    }
+                    return {
+                        id: product.id,
+                        name: productName, // GARANTIZADO QUE NO ES UNDEFINED
+                        description: product.description || 'Sin descripción disponible',
+                        categoryId: product.categoryId,
+                        supplierId: product.supplierId,
+                        unitPrice: product.unitPrice || product.price,
+                        currency: product.currency,
+                        minQuantity: product.minQuantity,
+                        maxQuantity: product.maxQuantity,
+                        unit: product.unit,
+                        incoterm: product.incoterm,
+                        originCountry: product.originCountry,
+                        images: product.images || [],
+                        specifications: product.specifications,
+                        status: 'active',
+                        isPublished: true,
+                        createdAt: product.createdAt,
+                        updatedAt: product.updatedAt,
+                        // Usar campos directos de la tabla en lugar de specifications
+                        containerType: product.containerType || '40GP',
+                        unitsPerContainer: product.unitsPerContainer || 0,
+                        pricePerContainer: product.pricePerContainer || 0,
+                        grossWeight: product.grossWeight || 0,
+                        netWeight: product.netWeight || 0,
+                        volume: product.volume || 0,
+                        packagingType: product.packagingType || '',
+                        stockContainers: product.stockContainers || 0,
+                        productionTime: product.productionTime || 0,
+                        packagingTime: product.packagingTime || 0,
+                        moq: product.moq || product.minQuantity,
+                        colors: specs.colors || [],
+                        sizes: specs.sizes || [],
+                        materials: specs.materials || [],
+                        tags: specs.tags || [],
+                        volumeDiscounts: specs.volumeDiscounts || [],
+                        // Usar campos directos de la tabla
+                        isNegotiable: product.isNegotiable || false,
+                        allowsCustomOrders: product.allowsCustomOrders || false,
+                        totalViews: product.totalViews || 0,
+                        totalInquiries: product.totalInquiries || 0,
+                        // Datos del supplier
+                        supplier: product.supplier ? {
+                            id: product.supplier.id,
+                            companyName: product.supplier.companyName,
+                            isVerified: product.supplier.isVerified,
+                            location: `${product.supplier.city}, ${product.supplier.country}`
+                        } : null,
+                        // Datos de la categoría
+                        category: product.category
+                    };
+                });
+                return {
+                    success: true,
+                    products: transformedProducts,
+                    total
+                };
+            }
+            catch (error) {
+                console.error('Error al obtener productos:', error);
+                return {
+                    success: false,
+                    products: [],
+                    total: 0
+                };
+            }
         });
     }
     static getProductById(id) {
         return __awaiter(this, void 0, void 0, function* () {
-            // Simular delay de base de datos
-            yield new Promise(resolve => setTimeout(resolve, 50));
-            return mockProducts.find(product => product.id === id) || null;
+            try {
+                const productId = parseInt(id);
+                const product = yield prisma.product.findUnique({
+                    where: { id: productId },
+                    include: {
+                        category: true,
+                        supplier: {
+                            select: {
+                                id: true,
+                                companyName: true,
+                                isVerified: true,
+                                country: true,
+                                city: true,
+                                contactName: true,
+                                contactPhone: true,
+                                contactPosition: true
+                            }
+                        }
+                    }
+                });
+                if (!product) {
+                    return null;
+                }
+                // Transformar para el frontend
+                const specs = product.specifications || {};
+                // FORZAR NOMBRE VÁLIDO - NUNCA UNDEFINED
+                let productName = product.title || '';
+                if (!productName || productName.trim() === '' || productName === 'undefined') {
+                    productName = `Producto ID ${product.id}`;
+                }
+                return {
+                    id: product.id,
+                    name: productName, // GARANTIZADO QUE NO ES UNDEFINED
+                    description: product.description || 'Sin descripción disponible',
+                    categoryId: product.categoryId,
+                    supplierId: product.supplierId,
+                    unitPrice: product.price,
+                    currency: product.currency,
+                    minQuantity: product.minQuantity,
+                    maxQuantity: product.maxQuantity,
+                    unit: product.unit,
+                    incoterm: product.incoterm,
+                    originCountry: product.originCountry,
+                    images: product.images || [],
+                    specifications: product.specifications,
+                    status: 'active',
+                    isPublished: true,
+                    createdAt: product.createdAt,
+                    updatedAt: product.updatedAt,
+                    // Datos de specifications con casting seguro
+                    containerType: specs.containerType || '40GP',
+                    unitsPerContainer: specs.unitsPerContainer || 0,
+                    pricePerContainer: specs.pricePerContainer || 0,
+                    grossWeight: specs.grossWeight || 0,
+                    netWeight: specs.netWeight || 0,
+                    volume: specs.volume || 0,
+                    packagingType: specs.packagingType || '',
+                    stockContainers: specs.stockContainers || 0,
+                    productionTime: specs.productionTime || 0,
+                    packagingTime: specs.packagingTime || 0,
+                    moq: specs.moq || product.minQuantity,
+                    colors: specs.colors || [],
+                    sizes: specs.sizes || [],
+                    materials: specs.materials || [],
+                    tags: specs.tags || [],
+                    volumeDiscounts: specs.volumeDiscounts || [],
+                    // Valores por defecto
+                    isNegotiable: false,
+                    allowsCustomOrders: false,
+                    totalViews: 0,
+                    totalInquiries: 0,
+                    // Datos del supplier
+                    supplier: product.supplier ? {
+                        id: product.supplier.id,
+                        companyName: product.supplier.companyName,
+                        isVerified: product.supplier.isVerified,
+                        location: `${product.supplier.city}, ${product.supplier.country}`,
+                        contactName: product.supplier.contactName,
+                        contactPhone: product.supplier.contactPhone,
+                        contactPosition: product.supplier.contactPosition
+                    } : null,
+                    // Datos de la categoría
+                    category: product.category
+                };
+            }
+            catch (error) {
+                console.error('Error al obtener producto por ID:', error);
+                return null;
+            }
         });
     }
-    static getProductsByCategory(category) {
+    static getProductsByCategory(categoryId) {
         return __awaiter(this, void 0, void 0, function* () {
-            // Simular delay de base de datos
-            yield new Promise(resolve => setTimeout(resolve, 75));
-            return mockProducts.filter(product => product.categoryId === category);
+            try {
+                const products = yield prisma.product.findMany({
+                    where: {
+                        categoryId: parseInt(categoryId)
+                    },
+                    include: {
+                        category: true,
+                        supplier: {
+                            select: {
+                                id: true,
+                                companyName: true,
+                                isVerified: true,
+                                country: true,
+                                city: true
+                            }
+                        }
+                    }
+                });
+                // Transformar datos para el frontend
+                return products.map((product) => {
+                    const specs = product.specifications || {};
+                    return {
+                        id: product.id,
+                        name: product.title,
+                        description: product.description,
+                        categoryId: product.categoryId,
+                        supplierId: product.supplierId,
+                        unitPrice: product.price,
+                        currency: product.currency,
+                        minQuantity: product.minQuantity,
+                        maxQuantity: product.maxQuantity,
+                        unit: product.unit,
+                        incoterm: product.incoterm,
+                        originCountry: product.originCountry,
+                        images: product.images || [],
+                        specifications: product.specifications,
+                        status: 'active',
+                        isPublished: true,
+                        createdAt: product.createdAt,
+                        updatedAt: product.updatedAt,
+                        // Datos de specifications con casting seguro
+                        containerType: specs.containerType || '40GP',
+                        unitsPerContainer: specs.unitsPerContainer || 0,
+                        pricePerContainer: specs.pricePerContainer || 0,
+                        grossWeight: specs.grossWeight || 0,
+                        netWeight: specs.netWeight || 0,
+                        volume: specs.volume || 0,
+                        packagingType: specs.packagingType || '',
+                        stockContainers: specs.stockContainers || 0,
+                        productionTime: specs.productionTime || 0,
+                        packagingTime: specs.packagingTime || 0,
+                        moq: specs.moq || product.minQuantity,
+                        colors: specs.colors || [],
+                        sizes: specs.sizes || [],
+                        materials: specs.materials || [],
+                        tags: specs.tags || [],
+                        volumeDiscounts: specs.volumeDiscounts || [],
+                        // Valores por defecto
+                        isNegotiable: false,
+                        allowsCustomOrders: false,
+                        totalViews: 0,
+                        totalInquiries: 0,
+                        // Datos del supplier
+                        supplier: product.supplier ? {
+                            id: product.supplier.id,
+                            companyName: product.supplier.companyName,
+                            isVerified: product.supplier.isVerified,
+                            location: `${product.supplier.city}, ${product.supplier.country}`
+                        } : null,
+                        // Datos de la categoría
+                        category: product.category
+                    };
+                });
+            }
+            catch (error) {
+                console.error('Error al obtener productos por categoría:', error);
+                return [];
+            }
         });
     }
     static updateStock(productId, quantity) {
         return __awaiter(this, void 0, void 0, function* () {
-            const product = mockProducts.find(p => p.id === productId);
-            if (product) {
-                product.stockContainers -= quantity;
-                product.updatedAt = new Date();
+            try {
+                const id = parseInt(productId);
+                yield prisma.product.update({
+                    where: { id },
+                    data: {
+                        specifications: {
+                        // Necesitaríamos actualizar stockContainers en specifications
+                        // Por ahora dejamos el método como placeholder
+                        },
+                        updatedAt: new Date()
+                    }
+                });
+            }
+            catch (error) {
+                console.error('Error al actualizar stock:', error);
             }
         });
     }

@@ -8,9 +8,20 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __rest = (this && this.__rest) || function (s, e) {
+    var t = {};
+    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+        t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+                t[p[i]] = s[p[i]];
+        }
+    return t;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateSession = exports.logout = exports.getProfile = exports.login = void 0;
-const authService_1 = require("../services/authService");
+exports.validateSession = exports.logout = exports.getProfile = exports.register = exports.login = void 0;
+const prismaService_1 = require("../services/prismaService");
 const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, password } = req.body;
@@ -29,25 +40,99 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 message: 'Formato de email inválido'
             });
         }
-        const loginResult = yield authService_1.AuthService.login({ email, password });
-        if (!loginResult.success) {
-            return res.status(401).json(loginResult);
+        // Obtener datos de sesión
+        const sessionData = {
+            ipAddress: req.ip || req.connection.remoteAddress,
+            userAgent: req.get('User-Agent'),
+        };
+        // Autenticar usuario con Prisma
+        const authResult = yield prismaService_1.databaseService.authenticateUser({ email, password }, sessionData);
+        if (!authResult) {
+            return res.status(401).json({
+                success: false,
+                message: 'Credenciales inválidas'
+            });
         }
-        // Login exitoso
-        res.json(loginResult);
+        const { user, token } = authResult;
+        // Respuesta exitosa (sin password)
+        const { password: _ } = user, userWithoutPassword = __rest(user, ["password"]);
+        res.json({
+            success: true,
+            message: 'Login exitoso',
+            user: userWithoutPassword,
+            token,
+            expiresIn: '7d'
+        });
     }
     catch (error) {
-        console.error('Error en login:', error);
+        console.error('❌ Error en login:', error);
         res.status(500).json({
             success: false,
-            message: 'Error interno del servidor'
+            message: 'Error interno del servidor',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 });
 exports.login = login;
+const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const userData = req.body;
+        // Validaciones requeridas
+        const requiredFields = [
+            'email', 'password', 'companyName', 'taxId', 'operationCountry',
+            'industry', 'contactName', 'contactPosition', 'contactPhone',
+            'fiscalAddress', 'country', 'state', 'city', 'postalCode'
+        ];
+        const missingFields = requiredFields.filter(field => !userData[field]);
+        if (missingFields.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Campos requeridos faltantes: ${missingFields.join(', ')}`
+            });
+        }
+        // Validar formato de email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(userData.email)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Formato de email inválido'
+            });
+        }
+        // Validar longitud de contraseña
+        if (userData.password.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: 'La contraseña debe tener al menos 6 caracteres'
+            });
+        }
+        // Crear usuario con Prisma
+        const newUser = yield prismaService_1.databaseService.createUser(userData);
+        // Respuesta exitosa (sin password)
+        const { password: _ } = newUser, userWithoutPassword = __rest(newUser, ["password"]);
+        res.status(201).json({
+            success: true,
+            message: 'Usuario registrado exitosamente',
+            user: userWithoutPassword
+        });
+    }
+    catch (error) {
+        console.error('❌ Error en registro:', error);
+        if (error.message === 'El email ya está registrado') {
+            return res.status(409).json({
+                success: false,
+                message: error.message
+            });
+        }
+        res.status(500).json({
+            success: false,
+            message: 'Error interno del servidor',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+exports.register = register;
 const getProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // En una implementación real, extraerías el userId del token JWT del header Authorization
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({
@@ -55,28 +140,26 @@ const getProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 message: 'Token de autorización requerido'
             });
         }
-        const token = authHeader.substring(7); // Remover 'Bearer '
-        const userId = yield authService_1.AuthService.validateToken(token);
-        if (!userId) {
+        const token = authHeader.substring(7); // Remover "Bearer "
+        // Verificar token y obtener usuario con Prisma
+        const user = yield prismaService_1.databaseService.verifyToken(token);
+        if (!user) {
             return res.status(401).json({
                 success: false,
                 message: 'Token inválido o expirado'
             });
         }
-        const user = yield authService_1.AuthService.getProfile(userId);
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'Usuario no encontrado'
-            });
-        }
+        // Respuesta exitosa (sin password)
+        const { password: _ } = user, userWithoutPassword = __rest(user, ["password"]);
         res.json({
             success: true,
-            user
+            data: {
+                user: userWithoutPassword
+            }
         });
     }
     catch (error) {
-        console.error('Error al obtener perfil:', error);
+        console.error('❌ Error obteniendo perfil:', error);
         res.status(500).json({
             success: false,
             message: 'Error interno del servidor'
@@ -86,15 +169,31 @@ const getProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
 exports.getProfile = getProfile;
 const logout = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // En una implementación real con JWT, aquí podrías invalidar el token
-        // o agregarlo a una blacklist
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                message: 'Token de autorización requerido'
+            });
+        }
+        const token = authHeader.substring(7);
+        // Verificar token para obtener userId
+        const user = yield prismaService_1.databaseService.verifyToken(token);
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: 'Token inválido'
+            });
+        }
+        // Hacer logout (desactivar sesión)
+        yield prismaService_1.databaseService.logoutUser(user.id, token);
         res.json({
             success: true,
-            message: 'Sesión cerrada exitosamente'
+            message: 'Logout exitoso'
         });
     }
     catch (error) {
-        console.error('Error en logout:', error);
+        console.error('❌ Error en logout:', error);
         res.status(500).json({
             success: false,
             message: 'Error interno del servidor'
@@ -114,8 +213,9 @@ const validateSession = (req, res) => __awaiter(void 0, void 0, void 0, function
             });
         }
         const token = authHeader.substring(7);
-        const userId = yield authService_1.AuthService.validateToken(token);
-        if (!userId) {
+        // Verificar token con Prisma
+        const user = yield prismaService_1.databaseService.verifyToken(token);
+        if (!user) {
             return res.status(401).json({
                 success: false,
                 valid: false,
@@ -125,11 +225,15 @@ const validateSession = (req, res) => __awaiter(void 0, void 0, void 0, function
         res.json({
             success: true,
             valid: true,
-            message: 'Sesión válida'
+            message: 'Sesión válida',
+            data: {
+                userId: user.id,
+                email: user.email
+            }
         });
     }
     catch (error) {
-        console.error('Error al validar sesión:', error);
+        console.error('❌ Error al validar sesión:', error);
         res.status(500).json({
             success: false,
             valid: false,

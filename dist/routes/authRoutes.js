@@ -5,6 +5,7 @@ const authController_1 = require("../controllers/authController");
 const router = (0, express_1.Router)();
 // Rutas de autenticación
 router.post('/login', authController_1.login);
+router.post('/register', authController_1.register);
 router.post('/logout', authController_1.logout);
 router.get('/profile', authController_1.getProfile);
 router.get('/validate', authController_1.validateSession);

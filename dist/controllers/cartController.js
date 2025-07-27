@@ -46,8 +46,20 @@ class CartController {
             try {
                 const userId = req.headers['user-id'] || 'demo_user';
                 const { productId, containerQuantity, containerType, incoterm, customPrice, notes } = req.body;
+                // Log para debugging
+                console.log('🛒 Backend - Datos recibidos:', {
+                    userId,
+                    productId,
+                    containerQuantity,
+                    containerType,
+                    incoterm,
+                    customPrice,
+                    notes,
+                    body: req.body
+                });
                 // Validación básica
                 if (!productId) {
+                    console.log('❌ Error: ProductId es requerido');
                     res.status(400).json({
                         success: false,
                         message: 'El ID del producto es requerido'
@@ -55,6 +67,7 @@ class CartController {
                     return;
                 }
                 if (!containerQuantity || containerQuantity < 1) {
+                    console.log('❌ Error: containerQuantity inválido:', containerQuantity);
                     res.status(400).json({
                         success: false,
                         message: 'La cantidad de contenedores debe ser mayor a 0'

@@ -1,5 +1,26 @@
 // Tipos para el sistema de RFQ (Request for Quotation)
 
+export interface FreightQuote {
+  id: string;
+  origin: string;
+  destination: string;
+  containerType: string;
+  estimatedDate: string;
+  specialRequirements?: string;
+  selectedCarrier?: {
+    name: string;
+    cost: number;
+    currency: string;
+    transitTime: number;
+    incoterm: string;
+    conditions: string[];
+    availability: string;
+  };
+  cost: number;
+  currency: string;
+  createdAt: string;
+}
+
 export interface RFQRequest {
   id?: string;
   productId: string;
@@ -37,6 +58,9 @@ export interface RFQRequest {
   // Información adicional
   estimatedValue?: number;
   currency?: string;
+  
+  // Información de flete (nueva)
+  freightQuote?: FreightQuote;
   
   // Timestamps
   createdAt: string;
@@ -92,6 +116,7 @@ export interface RFQCreateRequest {
   logisticsComments?: string;
   specialRequirements?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
+  freightQuote?: FreightQuote;
 }
 
 export interface RFQUpdateRequest {
@@ -100,6 +125,7 @@ export interface RFQUpdateRequest {
   logisticsComments?: string;
   specialRequirements?: string;
   supplierResponse?: RFQResponse;
+  freightQuote?: FreightQuote;
 }
 
 export interface RFQFilter {

@@ -86,7 +86,7 @@ class CartService {
                 supplierId: product.supplierId,
                 containerType,
                 containerQuantity,
-                pricePerContainer: product.unitPrice,
+                pricePerContainer: product.pricePerContainer,
                 currency: product.currency,
                 incoterm,
                 customPrice,

@@ -13,11 +13,45 @@ exports.getProductsByCategory = exports.getProductById = exports.getAllProducts 
 const productService_1 = require("../services/productService");
 const getAllProducts = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const products = yield productService_1.ProductService.getAllProducts();
-        res.json(products);
+        const filters = {
+            page: parseInt(req.query.page) || 1,
+            limit: parseInt(req.query.limit) || 20,
+            search: req.query.search,
+            category: req.query.category,
+            priceMin: req.query.priceMin ? parseFloat(req.query.priceMin) : undefined,
+            priceMax: req.query.priceMax ? parseFloat(req.query.priceMax) : undefined,
+            containerType: req.query.containerType,
+            incoterm: req.query.incoterm,
+            isNegotiable: req.query.isNegotiable === 'true',
+            allowsCustomOrders: req.query.allowsCustomOrders === 'true',
+            sortBy: req.query.sortBy,
+            sortOrder: req.query.sortOrder
+        };
+        console.log('🔄 ProductController.getAllProducts called');
+        const result = yield productService_1.ProductService.getAllProducts(filters);
+        // Debug logging
+        if (result.success && result.products && result.products.length > 0) {
+            const firstProduct = result.products[0];
+            console.log(`📦 First product debug:`);
+            console.log(`   ID: ${firstProduct.id}`);
+            console.log(`   name: "${firstProduct.name}"`);
+            console.log(`   name type: ${typeof firstProduct.name}`);
+            console.log(`   pricePerContainer: ${firstProduct.pricePerContainer}`);
+            // Si el nombre sigue siendo undefined, forzar a usar un nombre por defecto
+            result.products = result.products.map(product => (Object.assign(Object.assign({}, product), { name: product.name || `Producto ID ${product.id}` // Fallback temporal
+             })));
+            console.log(`📦 After fallback - name: "${result.products[0].name}"`);
+        }
+        res.json(result);
     }
     catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('❌ ProductController error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            products: [],
+            total: 0
+        });
     }
 });
 exports.getAllProducts = getAllProducts;

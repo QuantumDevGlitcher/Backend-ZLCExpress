@@ -9,6 +9,7 @@ router.use(rfqValidation_1.RFQValidationMiddleware.sanitizeInput);
 // Rutas principales de RFQ
 router.post('/', rfqValidation_1.RFQValidationMiddleware.validateCreateRFQ, rfqController_1.RFQController.createRFQ); // Crear nueva RFQ
 router.get('/stats', rfqValidation_1.RFQValidationMiddleware.validateQueryFilters, rfqController_1.RFQController.getRFQStats); // Obtener estadísticas (debe ir antes de /:id)
+router.get('/freight', rfqValidation_1.RFQValidationMiddleware.validateQueryFilters, rfqController_1.RFQController.getRFQsWithFreight); // Obtener RFQs con información de flete
 router.get('/', rfqValidation_1.RFQValidationMiddleware.validateQueryFilters, rfqController_1.RFQController.getAllRFQs); // Obtener todas las RFQs con filtros
 router.get('/:id', rfqController_1.RFQController.getRFQById); // Obtener RFQ por ID
 router.put('/:id', rfqController_1.RFQController.updateRFQ); // Actualizar RFQ

@@ -19,7 +19,17 @@ export const createQuote = async (req: Request, res: Response) => {
     console.log('📄 Purchase Order File:', req.body.purchaseOrderFile);
     console.log('📝 Notes:', req.body.notes);
     
-    const userId = parseInt(req.headers['user-id'] as string) || 1; // Mock user ID
+    // ✅ USAR USUARIO AUTENTICADO
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado'
+      });
+    }
+    
+    const userId = user.id;
+    console.log(`🔒 Usuario autenticado: ${userId} (${user.email})`);
     
     const paymentConditions = req.body.paymentTerms || req.body.paymentConditions;
     console.log('💰 Condiciones de pago finales:', paymentConditions);
@@ -59,11 +69,21 @@ export const getUserQuotes = async (req: Request, res: Response) => {
   try {
     console.log('📥 QuoteController: Obteniendo cotizaciones del usuario');
     
-    const userId = parseInt(req.headers['user-id'] as string) || 1;
+    // ✅ USAR USUARIO AUTENTICADO
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado'
+      });
+    }
+    
+    const userId = user.id;
+    console.log(`🔒 Obteniendo cotizaciones para usuario: ${userId} (${user.email})`);
     
     const quotes = await QuoteService.getUserQuotes(userId);
     
-    console.log(`✅ QuoteController: ${quotes.length} cotizaciones encontradas`);
+    console.log(`✅ QuoteController: ${quotes.length} cotizaciones encontradas para usuario ${userId}`);
     res.json({
       success: true,
       data: quotes,
@@ -87,7 +107,17 @@ export const getQuoteStats = async (req: Request, res: Response) => {
   try {
     console.log('📥 QuoteController: Obteniendo estadísticas');
     
-    const userId = parseInt(req.headers['user-id'] as string) || 1;
+    // ✅ USAR USUARIO AUTENTICADO
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado'
+      });
+    }
+    
+    const userId = user.id;
+    console.log(`🔒 Obteniendo estadísticas para usuario: ${userId} (${user.email})`);
     
     const stats = await QuoteService.getQuoteStats(userId);
     
@@ -115,16 +145,28 @@ export const getQuoteById = async (req: Request, res: Response) => {
     console.log('📥 QuoteController: Obteniendo cotización por ID');
     
     const quoteId = parseInt(req.params.id);
-    const userId = parseInt(req.headers['user-id'] as string) || 1;
     
-    // Obtener todas las cotizaciones y buscar la específica
+    // ✅ USAR USUARIO AUTENTICADO
+    const user = (req as any).user;
+    if (!user || !user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado'
+      });
+    }
+    
+    const userId = user.id;
+    console.log(`🔒 Obteniendo cotización ${quoteId} para usuario: ${userId} (${user.email})`);
+    
+    // Obtener todas las cotizaciones del usuario y buscar la específica
     const quotes = await QuoteService.getUserQuotes(userId);
     const foundQuote = quotes.find((q: any) => q.id === quoteId);
     
     if (!foundQuote) {
+      console.log(`❌ Cotización ${quoteId} no encontrada para usuario ${userId}`);
       return res.status(404).json({
         success: false,
-        message: 'Cotización no encontrada'
+        message: 'Cotización no encontrada o no tiene permisos para verla'
       });
     }
     
@@ -361,13 +403,22 @@ export const rejectQuote = async (req: Request, res: Response) => {
  */
 export const sendBuyerCounterOffer = async (req: Request, res: Response) => {
   try {
-    console.log('🔄 QuoteController: Enviando contraoferta del comprador');
+    console.log('� QuoteController: Enviando contraoferta del comprador');
     
     const { id: quoteId } = req.params;
     const { newPrice, comment, paymentTerms, deliveryTerms } = req.body;
     const userId = parseInt(req.headers['user-id'] as string) || 1;
 
-    if (!comment) {
+    console.log('📝 Datos de contraoferta del comprador:', {
+      quoteId,
+      newPrice,
+      comment,
+      paymentTerms,
+      deliveryTerms,
+      userId
+    });
+
+    if (!comment?.trim()) {
       return res.status(400).json({
         success: false,
         message: 'El comentario es requerido para enviar una contraoferta'
@@ -378,13 +429,14 @@ export const sendBuyerCounterOffer = async (req: Request, res: Response) => {
       parseInt(quoteId),
       userId,
       {
-        newPrice,
-        comment,
+        newPrice: newPrice ? Number(newPrice) : undefined,
+        comment: comment.trim(),
         paymentTerms,
         deliveryTerms
       }
     );
 
+    console.log('✅ QuoteController: Contraoferta del comprador enviada exitosamente');
     res.json({
       success: true,
       data: updatedQuote,

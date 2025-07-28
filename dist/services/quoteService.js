@@ -94,6 +94,7 @@ class QuoteService {
                 console.log('📦 Container quantity calculado:', containerQuantity);
                 // 5. Crear la cotización principal
                 console.log('💾 Creando cotización en base de datos...');
+                console.log('💰 PaymentConditions que se van a guardar:', data.paymentConditions);
                 const quote = yield prisma.quote.create({
                     data: {
                         quoteNumber,
@@ -105,9 +106,14 @@ class QuoteService {
                         totalPrice: data.totalAmount,
                         currency: 'USD',
                         status: 'PENDING',
-                        paymentTerms: 'Net 30 days',
+                        paymentTerms: data.paymentConditions || 'Net 30 days',
                         logisticsComments: data.notes || 'Cotización generada desde carrito',
                         estimatedValue: data.totalAmount
+                        // ✅ Información del archivo de orden de compra - PENDIENTE DE SCHEMA
+                        // purchaseOrderFileName: data.purchaseOrderFile?.name,
+                        // purchaseOrderFileUrl: data.purchaseOrderFile?.url,
+                        // purchaseOrderFileSize: data.purchaseOrderFile?.size,
+                        // purchaseOrderFileType: data.purchaseOrderFile?.type
                     },
                     include: {
                         buyer: {
@@ -219,7 +225,7 @@ class QuoteService {
                         const quoteItem = yield prisma.quoteItem.create({
                             data: {
                                 quoteId: quote.id,
-                                productId: item.productId || null,
+                                productId: item.productId ? parseInt(item.productId.toString()) : null,
                                 itemDescription: productTitle, // ✅ Usar nombre real del producto en itemDescription
                                 quantity: item.quantity || item.containerQuantity || 1,
                                 unitPrice: pricePerContainer,
@@ -249,6 +255,7 @@ class QuoteService {
                     const quoteItem = yield prisma.quoteItem.create({
                         data: {
                             quoteId: quote.id,
+                            productId: null,
                             itemDescription: 'Productos desde carrito',
                             quantity: containerQuantity,
                             unitPrice: data.totalAmount / containerQuantity,
@@ -289,8 +296,11 @@ class QuoteService {
                     createdAt: quote.createdAt,
                     updatedAt: quote.updatedAt,
                     logisticsComments: quote.logisticsComments || '',
+                    paymentConditions: quote.paymentTerms || 'Net 30 days',
                     freightEstimate: (freightInfo === null || freightInfo === void 0 ? void 0 : freightInfo.cost) ? Number(freightInfo.cost) : 0, // ✅ Convertir Decimal a number
                     platformCommission: 250, // Comisión estándar de plataforma
+                    // ✅ Información del archivo de orden de compra - PENDIENTE DE IMPLEMENTAR
+                    purchaseOrderFile: data.purchaseOrderFile || undefined,
                     freightDetails: freightInfo ? {
                         id: freightInfo.id,
                         carrier: freightInfo.carrier,
@@ -306,8 +316,8 @@ class QuoteService {
                         incoterm: freightInfo.incoterm
                     } : undefined, // ✅ Información completa de flete
                     items: quoteItems.map(item => (Object.assign(Object.assign({}, item), { unitPrice: Number(item.unitPrice), totalPrice: Number(item.totalPrice) }))),
-                    buyer: quote.buyer,
-                    user: quote.buyer // Para compatibilidad con frontend
+                    buyer: quote.buyer || { id: quote.buyerId, companyName: 'N/A', email: 'N/A' },
+                    user: quote.buyer || { id: quote.buyerId, companyName: 'N/A', email: 'N/A' } // Para compatibilidad con frontend
                 };
                 console.log('🎉 Cotización creada completamente:', {
                     id: formattedQuote.id,
@@ -351,7 +361,8 @@ class QuoteService {
                 // Transformar para compatibilidad con frontend
                 return quotes.map((quote) => {
                     var _a;
-                    return ({
+                    console.log('🔍 PaymentTerms de la cotización desde DB:', quote.paymentTerms);
+                    return {
                         id: quote.id,
                         quoteNumber: quote.quoteNumber,
                         totalPrice: quote.totalPrice ? Number(quote.totalPrice) : 0,
@@ -359,8 +370,23 @@ class QuoteService {
                         createdAt: quote.createdAt,
                         updatedAt: quote.updatedAt,
                         logisticsComments: quote.logisticsComments || '',
+                        paymentConditions: quote.paymentTerms || 'Net 30 days',
                         freightEstimate: quote.freightQuote ? Number(quote.freightQuote.cost) : 0,
                         platformCommission: 0, // Simplificado por ahora
+                        // ✅ Agregar campos de contraoferta pendiente
+                        pendingCounterOfferPrice: quote.pendingCounterOfferPrice ? Number(quote.pendingCounterOfferPrice) : null,
+                        pendingPaymentTerms: quote.pendingPaymentTerms || null,
+                        pendingDeliveryTerms: quote.pendingDeliveryTerms || null,
+                        // ✅ Incluir comentarios del proveedor
+                        supplierResponse: quote.supplierComments || '',
+                        supplierComments: quote.supplierComments || '',
+                        // ✅ Información del archivo de orden de compra
+                        purchaseOrderFile: (quote.purchaseOrderFileName || quote.purchaseOrderFileUrl) ? {
+                            name: quote.purchaseOrderFileName,
+                            url: quote.purchaseOrderFileUrl,
+                            size: quote.purchaseOrderFileSize,
+                            type: quote.purchaseOrderFileType
+                        } : undefined,
                         // ✅ Incluir información completa de flete
                         freightDetails: quote.freightQuote ? {
                             origin: quote.freightQuote.originPort,
@@ -378,11 +404,42 @@ class QuoteService {
                             specifications: item.specifications ? JSON.parse(item.specifications) : {} })))) || [],
                         buyer: quote.buyer,
                         user: quote.buyer
-                    });
+                    };
                 });
             }
             catch (error) {
                 console.error('❌ QuoteService: Error obteniendo cotizaciones:', error);
+                throw error;
+            }
+        });
+    }
+    // Obtener cotización por ID
+    static getQuoteById(quoteId) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                console.log('📋 QuoteService: Obteniendo cotización por ID', quoteId);
+                const quote = yield prisma.quote.findUnique({
+                    where: { id: quoteId },
+                    include: {
+                        buyer: {
+                            select: { id: true, companyName: true, email: true, contactName: true }
+                        },
+                        supplier: {
+                            select: { id: true, companyName: true, email: true, contactName: true }
+                        },
+                        quoteItems: true,
+                        freightQuote: true
+                    }
+                });
+                if (!quote) {
+                    console.log('❌ QuoteService: Cotización no encontrada');
+                    return null;
+                }
+                console.log('✅ QuoteService: Cotización obtenida:', quote.quoteNumber);
+                return this.transformQuoteWithItems(quote);
+            }
+            catch (error) {
+                console.error('❌ QuoteService: Error obteniendo cotización por ID:', error);
                 throw error;
             }
         });
@@ -442,6 +499,7 @@ class QuoteService {
             createdAt: ((_a = quote.createdAt) === null || _a === void 0 ? void 0 : _a.toISOString()) || new Date().toISOString(),
             updatedAt: ((_b = quote.updatedAt) === null || _b === void 0 ? void 0 : _b.toISOString()) || new Date().toISOString(),
             notes: quote.logisticsComments || '',
+            paymentConditions: quote.paymentTerms || 'Net 30 days',
             freightEstimate: 0,
             platformCommission: 0,
             user: quote.buyer || quote.user || {},
@@ -454,6 +512,210 @@ class QuoteService {
                 totalPrice: item.totalPrice,
                 supplierName: item.supplierName
             }))
+        };
+    }
+    // ===============================
+    // NUEVOS MÉTODOS PARA GESTIÓN DE ESTADOS Y COMENTARIOS
+    // ===============================
+    // Actualizar estado de una cotización con comentario opcional
+    static updateQuoteStatus(quoteId, newStatus, userId, userType, comment, counterOfferData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                console.log('🔄 QuoteService: Actualizando estado de cotización', quoteId, 'a', newStatus);
+                console.log('🔍 DEBUG: Parámetros recibidos:', { quoteId, newStatus, userId, userType, comment, counterOfferData });
+                // Preparar datos de actualización
+                const updateData = {
+                    status: newStatus,
+                    updatedAt: new Date()
+                };
+                console.log('🔍 DEBUG: updateData inicial:', updateData);
+                // ✅ NUEVA LÓGICA: Para contraofertas, guardar en campos pending, NO actualizar precio principal
+                if (newStatus === 'PENDING' && (counterOfferData === null || counterOfferData === void 0 ? void 0 : counterOfferData.newPrice)) {
+                    // Solo guardar la contraoferta como pendiente, no actualizar precio principal
+                    updateData.pendingCounterOfferPrice = counterOfferData.newPrice;
+                    updateData.lastCounterOfferBy = userType;
+                    updateData.counterOfferCount = { increment: 1 };
+                    if (counterOfferData.paymentTerms) {
+                        updateData.pendingPaymentTerms = counterOfferData.paymentTerms;
+                    }
+                    if (counterOfferData.deliveryTerms) {
+                        updateData.pendingDeliveryTerms = counterOfferData.deliveryTerms;
+                    }
+                    console.log('💰 Contraoferta pendiente guardada:', {
+                        precio: counterOfferData.newPrice,
+                        términos: counterOfferData.paymentTerms,
+                        usuario: userType
+                    });
+                }
+                // ✅ Solo actualizar precio principal cuando se acepta la cotización
+                if (newStatus === 'ACCEPTED' && (counterOfferData === null || counterOfferData === void 0 ? void 0 : counterOfferData.newPrice)) {
+                    updateData.totalPrice = counterOfferData.newPrice;
+                    updateData.paymentTerms = counterOfferData.paymentTerms;
+                    updateData.deliveryTerms = counterOfferData.deliveryTerms;
+                    updateData.acceptedAt = new Date();
+                    // Limpiar campos pending al aceptar
+                    updateData.pendingCounterOfferPrice = null;
+                    updateData.pendingPaymentTerms = null;
+                    updateData.pendingDeliveryTerms = null;
+                    console.log('✅ Precio principal actualizado al aceptar:', counterOfferData.newPrice);
+                }
+                console.log('🔍 DEBUG: updateData final antes de la actualización:', updateData);
+                // Actualizar el estado de la cotización
+                const updatedQuote = yield prisma.quote.update({
+                    where: { id: quoteId },
+                    data: updateData,
+                    include: {
+                        buyer: {
+                            select: { id: true, companyName: true, email: true, contactName: true }
+                        },
+                        supplier: {
+                            select: { id: true, companyName: true, email: true, contactName: true }
+                        },
+                        quoteItems: true,
+                        freightQuote: true
+                    }
+                });
+                console.log('🔍 DEBUG: Cotización actualizada en BD:', {
+                    id: updatedQuote.id,
+                    status: updatedQuote.status,
+                    totalPrice: updatedQuote.totalPrice,
+                    paymentTerms: updatedQuote.paymentTerms
+                });
+                // Crear comentario si se proporciona
+                if (comment) {
+                    try {
+                        const commentData = {
+                            quoteId: quoteId,
+                            userId: userId,
+                            userType: userType,
+                            comment: comment,
+                            status: newStatus
+                        };
+                        // ✅ Agregar datos específicos de contraoferta si existe
+                        if (counterOfferData) {
+                            commentData.action = newStatus === 'PENDING' ? 'COUNTER_OFFER' : 'ACCEPT';
+                            commentData.counterOfferPrice = counterOfferData.newPrice || null;
+                            commentData.paymentTerms = counterOfferData.paymentTerms || null;
+                            commentData.deliveryTerms = counterOfferData.deliveryTerms || null;
+                            commentData.metadata = JSON.stringify(counterOfferData);
+                        }
+                        yield prisma.quoteComment.create({
+                            data: commentData
+                        });
+                        console.log('💬 Comentario de contraoferta guardado:', {
+                            action: commentData.action,
+                            precio: commentData.counterOfferPrice,
+                            userType: userType
+                        });
+                    }
+                    catch (commentError) {
+                        console.warn('⚠️ Error agregando comentario:', commentError);
+                    }
+                }
+                console.log('✅ QuoteService: Estado actualizado exitosamente:', newStatus);
+                return this.transformQuoteWithItems(updatedQuote);
+            }
+            catch (error) {
+                console.error('❌ QuoteService: Error actualizando estado:', error);
+                throw error;
+            }
+        });
+    }
+    // Método específico para enviar contraoferta desde el comprador
+    static sendBuyerCounterOffer(quoteId, buyerId, counterOfferData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // Cuando un comprador envía contraoferta, el estado debe cambiar a PENDING
+            // para que el proveedor pueda revisarla
+            return this.updateQuoteStatus(quoteId, 'PENDING', // Cambiar a PENDING en lugar de COUNTER_OFFER
+            buyerId, 'BUYER', counterOfferData.comment, counterOfferData);
+        });
+    }
+    // Método para aceptar cotización
+    static acceptQuote(quoteId, userId, userType, comment) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.updateQuoteStatus(quoteId, 'ACCEPTED', userId, userType, comment);
+        });
+    }
+    // Método para rechazar cotización
+    static rejectQuote(quoteId, userId, userType, comment) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.updateQuoteStatus(quoteId, 'REJECTED', userId, userType, comment);
+        });
+    }
+    // Método legado - mantenido para compatibilidad
+    static sendCounterOffer(quoteId, userId, userType, counterOfferData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // Redirigir al nuevo método unificado
+            return this.updateQuoteStatus(quoteId, 'COUNTER_OFFER', userId, userType, counterOfferData.comment, {
+                newPrice: counterOfferData.newPrice,
+                paymentTerms: counterOfferData.paymentTerms,
+                deliveryTerms: counterOfferData.deliveryTerms
+            });
+        });
+    }
+    // Obtener comentarios de una cotización
+    static getQuoteComments(quoteId) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                console.log('💬 QuoteService: Obteniendo comentarios para cotización', quoteId);
+                const comments = yield prisma.quoteComment.findMany({
+                    where: { quoteId: quoteId },
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                companyName: true,
+                                contactName: true
+                            }
+                        }
+                    },
+                    orderBy: { createdAt: 'asc' }
+                });
+                console.log('✅ QuoteService: Comentarios obtenidos:', comments.length);
+                return comments;
+            }
+            catch (error) {
+                console.warn('⚠️ QuoteService: Error obteniendo comentarios (modelo no disponible):', error);
+                return []; // Retornar array vacío si el modelo no está disponible
+            }
+        });
+    }
+    // Transformar cotización con items para compatibilidad
+    static transformQuoteWithItems(quote) {
+        var _a;
+        return {
+            id: quote.id,
+            quoteNumber: quote.quoteNumber,
+            totalPrice: quote.totalPrice ? Number(quote.totalPrice) : 0,
+            status: quote.status,
+            createdAt: quote.createdAt,
+            updatedAt: quote.updatedAt,
+            logisticsComments: quote.logisticsComments || '',
+            paymentConditions: quote.paymentTerms || 'Net 30 days',
+            freightEstimate: quote.freightQuote ? Number(quote.freightQuote.cost) : 0,
+            platformCommission: 0,
+            // ✅ Agregar campos de contraoferta pendiente
+            pendingCounterOfferPrice: quote.pendingCounterOfferPrice ? Number(quote.pendingCounterOfferPrice) : null,
+            pendingPaymentTerms: quote.pendingPaymentTerms || null,
+            pendingDeliveryTerms: quote.pendingDeliveryTerms || null,
+            purchaseOrderFile: undefined, // Por implementar cuando el schema esté sincronizado
+            freightDetails: quote.freightQuote ? {
+                id: quote.freightQuote.id,
+                carrier: quote.freightQuote.carrier,
+                cost: Number(quote.freightQuote.cost),
+                currency: quote.freightQuote.currency,
+                transitTime: quote.freightQuote.transitTime,
+                originPort: quote.freightQuote.originPort,
+                destinationPort: quote.freightQuote.destinationPort,
+                containerType: quote.freightQuote.containerType,
+                containerCount: quote.freightQuote.containerCount,
+                estimatedDeparture: quote.freightQuote.estimatedDeparture,
+                estimatedArrival: quote.freightQuote.estimatedArrival,
+                incoterm: quote.freightQuote.incoterm
+            } : undefined,
+            items: ((_a = quote.quoteItems) === null || _a === void 0 ? void 0 : _a.map((item) => (Object.assign(Object.assign({}, item), { unitPrice: item.unitPrice ? Number(item.unitPrice) : 0, totalPrice: item.totalPrice ? Number(item.totalPrice) : 0, productTitle: item.productTitle || item.itemDescription || 'Producto sin título', supplier: item.supplierName || 'N/A', supplierId: item.supplierId || quote.supplierId, containerType: item.containerType || '40GP', incoterm: item.incoterm || 'FOB', pricePerContainer: item.pricePerContainer ? Number(item.pricePerContainer) : (item.unitPrice ? Number(item.unitPrice) : 0), currency: item.currency || 'USD', quantity: item.quantity || 1, specifications: item.specifications ? JSON.parse(item.specifications) : {} })))) || [],
+            buyer: quote.buyer,
+            user: quote.buyer
         };
     }
     // ===============================

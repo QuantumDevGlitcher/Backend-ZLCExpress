@@ -25,18 +25,35 @@ class MyQuotesService {
     /**
      * Obtener cotizaciones para My Quotes (formato frontend)
      */
-    static getMyQuotes(userId) {
-        return __awaiter(this, void 0, void 0, function* () {
+    static getMyQuotes(userId_1) {
+        return __awaiter(this, arguments, void 0, function* (userId, userType = 'BUYER') {
             try {
-                console.log('🔄 MyQuotesService: Obteniendo cotizaciones para usuario:', userId);
-                // Obtener cotizaciones directamente de Prisma con toda la información
-                const quotes = yield prisma.quote.findMany({
-                    where: {
+                console.log('🔄 MyQuotesService: Obteniendo cotizaciones para usuario:', userId, 'tipo:', userType);
+                // Determinar el filtro según el tipo de usuario
+                let whereClause;
+                if (userType === 'BUYER') {
+                    // Los compradores solo ven las cotizaciones que ellos crearon
+                    whereClause = { buyerId: userId };
+                }
+                else if (userType === 'SUPPLIER') {
+                    // Los proveedores solo ven las cotizaciones dirigidas a ellos
+                    whereClause = { supplierId: userId };
+                }
+                else if (userType === 'BOTH') {
+                    // Los usuarios híbridos ven ambas
+                    whereClause = {
                         OR: [
                             { buyerId: userId },
                             { supplierId: userId }
                         ]
-                    },
+                    };
+                }
+                else {
+                    throw new Error(`Tipo de usuario no válido: ${userType}`);
+                }
+                // Obtener cotizaciones directamente de Prisma con toda la información
+                const quotes = yield prisma.quote.findMany({
+                    where: whereClause,
                     include: {
                         buyer: {
                             select: { id: true, companyName: true, email: true }

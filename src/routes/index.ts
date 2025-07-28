@@ -12,6 +12,7 @@ import quoteRoutes from './quoteRoutes';
 import myQuotesRoutes from './myQuotesRoutes';
 import quoteStatusRoutes from './quoteStatusRoutes'; // Nuevas rutas para estados de cotización
 import paymentOrderRoutes from './paymentOrderRoutes';
+import paypalRoutes from './paypal'; // PayPal Server SDK routes
 
 const router = Router();
 
@@ -28,6 +29,7 @@ router.use('/quotes', quoteRoutes); // ✅ REACTIVADO PARA FUNCIONALIDAD REAL
 router.use('/my-quotes', myQuotesRoutes);
 router.use('/api', quoteStatusRoutes); // Rutas para gestión de estados de cotización
 router.use('/payment-orders', paymentOrderRoutes);
+router.use('/paypal', paypalRoutes); // 💳 PayPal Integration
 router.use('/freight', freightRoutes);
 router.use('/shipping', shippingRoutes);
 console.log('✅ Todas las rutas configuradas');

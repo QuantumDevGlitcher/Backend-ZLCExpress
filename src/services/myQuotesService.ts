@@ -1,37 +1,38 @@
 // ================================================================
-// SERVICIO DE INTEGRACIÓN MY QUOTES SIMPLIFICADO - ZLCExpress
+// MY QUOTES SERVICE - Servicio Completamente Individualizado
 // ================================================================
-// Descripción: Servicio simplificado para conectar cotizaciones con frontend My Quotes
-// Fecha: 2025-07-27
+// Descripción: Servicio que garantiza separación total de datos por usuario
+// Sistema tipo Amazon: Cada usuario solo ve sus propios datos
 
 import { PrismaClient } from '@prisma/client';
-import QuoteService from './quoteService';
 
 const prisma = new PrismaClient();
 
-// Interfaces para compatibilidad con frontend
-export interface MyQuoteItem {
-  id: string;
-  productTitle: string;
-  supplier: string;
-  quantity: number;
-  pricePerContainer: number;
-}
-
 export interface MyQuote {
   id: string;
-  items: MyQuoteItem[];
+  quoteNumber: string;
+  productTitle: string;
+  supplierName: string;
+  buyerName: string;
+  containerType: string;
+  quantity: number;
   totalAmount: number;
-  status: 'pending' | 'accepted' | 'counter-offer' | 'rejected' | 'expired';
-  sentAt: Date;
-  updatedAt: Date;
+  currency: string;
+  status: string;
+  priority: string;
   paymentConditions: string;
+  deliveryTerms?: string;
   supplierResponse: string;
-  quoteNumber?: string;
-  containerType?: string;
-  incoterm?: string;
-  leadTime?: number;
-  validUntil?: Date;
+  sentAt: string;
+  updatedAt: string;
+  validUntil?: string;
+  items: Array<{
+    id: string;
+    productTitle: string;
+    supplier: string;
+    quantity: number;
+    pricePerContainer: number;
+  }>;
   freightInfo?: {
     cost: number;
     currency: string;
@@ -39,38 +40,81 @@ export interface MyQuote {
     destination: string;
     carrier: string;
     transitTime: number;
-    estimatedDate: Date;
+    estimatedDate: string;
   };
 }
 
 export class MyQuotesService {
-
   /**
-   * Obtener cotizaciones para My Quotes (formato frontend)
+   * 🔒 MÉTODO PRINCIPAL: Obtener cotizaciones según tipo de usuario
+   * Buyers: Solo ven cotizaciones donde ellos son el comprador
+   * Suppliers: Solo ven cotizaciones dirigidas a ellos como proveedores
    */
-  static async getMyQuotes(userId: number): Promise<MyQuote[]> {
+  static async getMyQuotes(userId: number, userType: 'BUYER' | 'SUPPLIER' | 'BOTH' = 'BUYER'): Promise<MyQuote[]> {
     try {
-      console.log('🔄 MyQuotesService: Obteniendo cotizaciones para usuario:', userId);
+      console.log(`🔄 MyQuotesService: Obteniendo cotizaciones para usuario ${userId} tipo ${userType}`);
 
-      // Obtener cotizaciones directamente de Prisma con toda la información
-      const quotes = await prisma.quote.findMany({
-        where: { 
+      // 🛡️ FILTRO CRÍTICO: Determinar consulta según tipo de usuario
+      let whereClause: any;
+      
+      if (userType === 'BUYER') {
+        // ✅ COMPRADORES: Solo ven cotizaciones que ELLOS crearon
+        whereClause = { buyerId: userId };
+      } else if (userType === 'SUPPLIER') {
+        // ✅ PROVEEDORES: Solo ven cotizaciones dirigidas A ELLOS
+        whereClause = { supplierId: userId };
+      } else if (userType === 'BOTH') {
+        // ✅ USUARIOS HÍBRIDOS: Ven ambas (raro, pero permitido)
+        whereClause = {
           OR: [
             { buyerId: userId },
             { supplierId: userId }
           ]
-        },
+        };
+      } else {
+        throw new Error(`Tipo de usuario no válido: ${userType}`);
+      }
+
+      // 📊 Ejecutar consulta con filtro de seguridad
+      const quotes = await prisma.quote.findMany({
+        where: whereClause, // 🔐 SEGURIDAD CRÍTICA
         include: {
           buyer: {
-            select: { id: true, companyName: true, email: true }
+            select: { 
+              id: true, 
+              companyName: true, 
+              email: true,
+              contactName: true 
+            }
           },
           supplier: {
-            select: { id: true, companyName: true, email: true }
+            select: { 
+              id: true, 
+              companyName: true, 
+              email: true,
+              contactName: true 
+            }
           },
           product: {
-            select: { title: true, supplier: { select: { companyName: true } } }
+            select: { 
+              title: true, 
+              supplier: { 
+                select: { companyName: true } 
+              } 
+            }
           },
-          quoteItems: true,
+          quoteItems: {
+            select: {
+              id: true,
+              itemDescription: true,
+              productTitle: true,
+              quantity: true,
+              unitPrice: true,
+              totalPrice: true,
+              currency: true,
+              specifications: true
+            }
+          },
           freightQuote: {
             select: {
               cost: true,
@@ -83,141 +127,126 @@ export class MyQuotesService {
             }
           }
         },
-        orderBy: { createdAt: 'desc' }
+        orderBy: {
+          createdAt: 'desc'
+        }
       });
 
-      console.log(`📊 MyQuotesService: ${quotes.length} cotizaciones encontradas en BD`);
+      // 🔄 Transformar datos para frontend
+      const transformedQuotes: MyQuote[] = quotes.map((quote: any) => ({
+        id: quote.id.toString(),
+        quoteNumber: quote.quoteNumber,
+        productTitle: quote.productTitle || quote.product?.title || 'Producto sin título',
+        supplierName: quote.supplier?.companyName || 'Proveedor desconocido',
+        buyerName: quote.buyer?.companyName || 'Comprador desconocido',
+        containerType: quote.containerType || '40GP',
+        quantity: quote.containerQuantity || 1,
+        totalAmount: Number(quote.totalPrice || 0),
+        currency: quote.currency || 'USD',
+        status: this.mapQuoteStatus(quote.status),
+        priority: quote.priority || 'medium',
+        paymentConditions: quote.paymentTerms || 'Sin condiciones',
+        deliveryTerms: quote.deliveryTerms || undefined,
+        supplierResponse: quote.supplierComments || '',
+        sentAt: quote.requestDate?.toISOString() || quote.createdAt.toISOString(),
+        updatedAt: quote.updatedAt.toISOString(),
+        validUntil: quote.validUntil?.toISOString(),
+        items: quote.quoteItems?.map((item: any) => ({
+          id: item.id.toString(),
+          productTitle: item.productTitle || item.itemDescription || 'Item sin título',
+          supplier: quote.supplier?.companyName || 'Proveedor desconocido',
+          quantity: item.quantity || 1,
+          pricePerContainer: Number(item.unitPrice || 0)
+        })) || [],
+        freightInfo: quote.freightQuote ? {
+          cost: Number(quote.freightQuote.cost || 0),
+          currency: quote.freightQuote.currency || 'USD',
+          origin: quote.freightQuote.originPort || 'Puerto origen',
+          destination: quote.freightQuote.destinationPort || 'Puerto destino',
+          carrier: quote.freightQuote.carrier || 'Transportista',
+          transitTime: quote.freightQuote.transitTime || 0,
+          estimatedDate: quote.freightQuote.estimatedArrival?.toISOString() || ''
+        } : undefined
+      }));
 
-      // Convertir formato de BD a formato frontend
-      const myQuotes: MyQuote[] = quotes.map((quote: any) => {
-        console.log(`🔍 Procesando cotización ${quote.quoteNumber}:`, {
-          id: quote.id,
-          productTitle: quote.productTitle,
-          supplier: quote.supplier?.companyName,
-          totalPrice: quote.totalPrice,
-          paymentTerms: quote.paymentTerms,
-          freightQuote: quote.freightQuote,
-          quoteItems: quote.quoteItems?.length || 0
-        });
-
-        // Preparar items con datos reales
-        const items: MyQuoteItem[] = quote.quoteItems && quote.quoteItems.length > 0 
-          ? quote.quoteItems.map((item: any, index: number) => ({
-              id: (index + 1).toString(),
-              productTitle: item.itemDescription || quote.productTitle || 'Producto sin nombre',
-              supplier: quote.supplier?.companyName || 'Proveedor no especificado',
-              quantity: item.quantity || quote.containerQuantity || 1,
-              pricePerContainer: item.unitPrice ? parseFloat(item.unitPrice.toString()) : 0
-            }))
-          : [{
-              id: '1',
-              productTitle: quote.productTitle || 'Producto sin nombre',
-              supplier: quote.supplier?.companyName || 'Proveedor no especificado',
-              quantity: quote.containerQuantity || 1,
-              pricePerContainer: quote.unitPrice ? parseFloat(quote.unitPrice.toString()) : 
-                               (quote.totalPrice ? parseFloat(quote.totalPrice.toString()) / (quote.containerQuantity || 1) : 0)
-            }];
-
-        // Mapear estados de BD a estados de frontend
-        const statusMap: any = {
-          'PENDING': 'pending',
-          'DRAFT': 'pending',
-          'SENT': 'pending',
-          'QUOTED': 'counter-offer',
-          'COUNTER_OFFER': 'counter-offer',
-          'ACCEPTED': 'accepted',
-          'REJECTED': 'rejected',
-          'EXPIRED': 'expired',
-          'CANCELLED': 'rejected'
-        };
-
-        const myQuote: MyQuote = {
-          id: quote.id.toString(),
-          items: items,
-          totalAmount: quote.totalPrice ? parseFloat(quote.totalPrice.toString()) : 0,
-          status: statusMap[quote.status] || 'pending',
-          sentAt: quote.createdAt || new Date(),
-          updatedAt: quote.updatedAt || new Date(),
-          paymentConditions: quote.paymentTerms || 'Condiciones no especificadas',
-          supplierResponse: quote.supplierComments || '',
-          quoteNumber: quote.quoteNumber,
-          containerType: quote.containerType,
-          incoterm: quote.incoterm || undefined,
-          leadTime: quote.leadTime || undefined,
-          validUntil: quote.validUntil || undefined,
-          // Agregar información de flete
-          freightInfo: quote.freightQuote ? {
-            cost: parseFloat(quote.freightQuote.cost.toString()),
-            currency: quote.freightQuote.currency,
-            origin: quote.freightQuote.originPort,
-            destination: quote.freightQuote.destinationPort,
-            carrier: quote.freightQuote.carrier,
-            transitTime: quote.freightQuote.transitTime,
-            estimatedDate: quote.freightQuote.estimatedArrival
-          } : undefined
-        };
-
-        return myQuote;
-      });
-
-      console.log('✅ MyQuotesService: Cotizaciones convertidas al formato frontend');
-      return myQuotes;
-
-    } catch (error) {
-      console.error('❌ MyQuotesService: Error obteniendo cotizaciones:', error);
-      throw new Error('Error al obtener cotizaciones para My Quotes');
-    }
-  }
-
-  /**
-   * Obtener estadísticas para My Quotes
-   */
-  static async getMyQuotesStats(userId: number) {
-    try {
-      console.log('🔄 MyQuotesService: Calculando estadísticas para usuario:', userId);
-
-      const stats = await QuoteService.getQuoteStats(userId);
+      console.log(`✅ MyQuotesService: ${transformedQuotes.length} cotizaciones obtenidas para usuario ${userId} (${userType})`);
       
-      // Convertir a formato esperado por frontend
-      const myQuotesStats = {
-        all: stats.total || 0,
-        pending: stats.pending || 0,
-        accepted: stats.approved || 0,
-        'counter-offer': 0, // No implementado aún
-        rejected: stats.rejected || 0,
-        totalValue: 0 // Calcular después
-      };
+      // 🔍 Log de auditoría de seguridad
+      console.log(`🔐 AUDITORIA: Usuario ${userId} (${userType}) accedió a ${transformedQuotes.length} cotizaciones`);
+      
+      return transformedQuotes;
 
-      console.log('✅ MyQuotesService: Estadísticas calculadas:', myQuotesStats);
-      return myQuotesStats;
-
-    } catch (error) {
-      console.error('❌ MyQuotesService: Error calculando estadísticas:', error);
-      throw new Error('Error al calcular estadísticas');
+    } catch (error: any) {
+      console.error('❌ MyQuotesService: Error obteniendo cotizaciones:', error);
+      throw new Error(`Error al obtener cotizaciones: ${error.message}`);
     }
   }
 
   /**
-   * Crear cotización directamente desde frontend
+   * 📊 Obtener estadísticas del usuario (solo sus datos)
    */
-  static async createQuoteFromFrontend(userId: number, quoteData: any) {
+  static async getMyQuotesStats(userId: number, userType: 'BUYER' | 'SUPPLIER' | 'BOTH'): Promise<{
+    total: number;
+    pending: number;
+    accepted: number;
+    rejected: number;
+    expired: number;
+  }> {
     try {
-      console.log('🔄 MyQuotesService: Creando cotización desde frontend:', quoteData);
+      console.log(`📊 MyQuotesService: Obteniendo estadísticas para usuario ${userId} tipo ${userType}`);
 
-      const quote = await QuoteService.createQuote(userId, {
-        totalAmount: quoteData.totalAmount || 0,
-        notes: quoteData.notes || '',
-        items: quoteData.items || [],
-        freightDetails: quoteData.freightDetails
-      });
+      // 🛡️ Mismo filtro de seguridad que en getMyQuotes
+      let whereClause: any;
+      
+      if (userType === 'BUYER') {
+        whereClause = { buyerId: userId };
+      } else if (userType === 'SUPPLIER') {
+        whereClause = { supplierId: userId };
+      } else if (userType === 'BOTH') {
+        whereClause = {
+          OR: [
+            { buyerId: userId },
+            { supplierId: userId }
+          ]
+        };
+      }
 
-      console.log('✅ MyQuotesService: Cotización creada desde frontend');
-      return quote;
+      // 📈 Contar por estados
+      const [total, pending, accepted, rejected, expired] = await Promise.all([
+        prisma.quote.count({ where: whereClause }),
+        prisma.quote.count({ where: { ...whereClause, status: 'PENDING' } }),
+        prisma.quote.count({ where: { ...whereClause, status: 'ACCEPTED' } }),
+        prisma.quote.count({ where: { ...whereClause, status: 'REJECTED' } }),
+        prisma.quote.count({ where: { ...whereClause, status: 'EXPIRED' } })
+      ]);
 
-    } catch (error) {
-      console.error('❌ MyQuotesService: Error creando cotización desde frontend:', error);
-      throw new Error('Error creando cotización');
+      const stats = { total, pending, accepted, rejected, expired };
+      console.log(`✅ MyQuotesService: Estadísticas obtenidas:`, stats);
+      
+      return stats;
+
+    } catch (error: any) {
+      console.error('❌ MyQuotesService: Error obteniendo estadísticas:', error);
+      throw new Error(`Error al obtener estadísticas: ${error.message}`);
     }
+  }
+
+  /**
+   * 🔄 Mapear estados de cotización
+   */
+  private static mapQuoteStatus(status: string): string {
+    const statusMap: { [key: string]: string } = {
+      'PENDING': 'pending',
+      'SENT': 'pending',
+      'QUOTED': 'pending',
+      'COUNTER_OFFER': 'counter-offer',
+      'ACCEPTED': 'accepted',
+      'REJECTED': 'rejected',
+      'EXPIRED': 'expired',
+      'CANCELLED': 'cancelled'
+    };
+    
+    return statusMap[status] || 'pending';
   }
 }
 

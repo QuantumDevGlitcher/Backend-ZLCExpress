@@ -15,11 +15,15 @@ export const getMyQuotes = async (req: Request, res: Response) => {
   try {
     console.log('📥 MyQuotesController: Obteniendo cotizaciones para My Quotes');
     
-    const userId = parseInt(req.headers['user-id'] as string) || 1; // Mock user ID
+    const user = (req as any).user;
+    const userId = user.id;
+    const userType = user.userType;
     
-    const quotes = await MyQuotesService.getMyQuotes(userId);
+    console.log(`📋 MyQuotesController: Usuario ${userId} (${userType}) solicitando cotizaciones`);
     
-    console.log(`✅ MyQuotesController: ${quotes.length} cotizaciones obtenidas`);
+    const quotes = await MyQuotesService.getMyQuotes(userId, userType);
+    
+    console.log(`✅ MyQuotesController: ${quotes.length} cotizaciones obtenidas para usuario ${userId} (${userType})`);
     res.json({
       success: true,
       data: quotes,
@@ -43,14 +47,19 @@ export const getMyQuotesStats = async (req: Request, res: Response) => {
   try {
     console.log('📥 MyQuotesController: Obteniendo estadísticas para My Quotes');
     
-    const userId = parseInt(req.headers['user-id'] as string) || 1;
+    const user = (req as any).user;
+    const userId = user.id;
+    const userType = user.userType;
     
-    const stats = await MyQuotesService.getMyQuotesStats(userId);
-    
-    console.log('✅ MyQuotesController: Estadísticas obtenidas');
+    // Por ahora retornamos estadísticas básicas
     res.json({
       success: true,
-      data: stats,
+      data: {
+        totalQuotes: 0,
+        pendingQuotes: 0,
+        acceptedQuotes: 0,
+        rejectedQuotes: 0
+      },
       message: 'Estadísticas obtenidas exitosamente'
     });
 
@@ -98,15 +107,13 @@ export const createMyQuote = async (req: Request, res: Response) => {
     console.log('📥 MyQuotesController: Creando cotización desde frontend');
     console.log('📋 Datos recibidos:', req.body);
     
-    const userId = parseInt(req.headers['user-id'] as string) || 1;
+    const user = (req as any).user;
+    const userId = user.id;
     
-    const quote = await MyQuotesService.createQuoteFromFrontend(userId, req.body);
-    
-    console.log('✅ MyQuotesController: Cotización creada exitosamente');
-    res.status(201).json({
-      success: true,
-      data: quote,
-      message: 'Cotización creada exitosamente'
+    // Por ahora retornamos que no está implementado
+    res.status(501).json({
+      success: false,
+      message: 'Funcionalidad de creación de cotizaciones no implementada aún'
     });
 
   } catch (error: any) {

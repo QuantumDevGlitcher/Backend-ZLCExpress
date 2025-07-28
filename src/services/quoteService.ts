@@ -50,6 +50,10 @@ export interface QuoteWithItems {
   paymentConditions?: string; // ✅ Condiciones de pago seleccionadas en el carrito
   freightEstimate: number; // Costo de flete actual
   platformCommission: number; // Comisión de plataforma
+  // ✅ Campos para contraoferta pendiente
+  pendingCounterOfferPrice?: number | null;
+  pendingPaymentTerms?: string | null;
+  pendingDeliveryTerms?: string | null;
   purchaseOrderFile?: {
     name?: string;
     url?: string;
@@ -459,6 +463,10 @@ export class QuoteService {
           paymentConditions: quote.paymentTerms || 'Net 30 days',
           freightEstimate: quote.freightQuote ? Number(quote.freightQuote.cost) : 0,
           platformCommission: 0, // Simplificado por ahora
+          // ✅ Agregar campos de contraoferta pendiente
+          pendingCounterOfferPrice: quote.pendingCounterOfferPrice ? Number(quote.pendingCounterOfferPrice) : null,
+          pendingPaymentTerms: quote.pendingPaymentTerms || null,
+          pendingDeliveryTerms: quote.pendingDeliveryTerms || null,
           // ✅ Incluir comentarios del proveedor
           supplierResponse: quote.supplierComments || '',
           supplierComments: quote.supplierComments || '',
@@ -493,7 +501,7 @@ export class QuoteService {
             currency: item.currency || 'USD',
             quantity: item.quantity || 1,
             // ✅ Mantener backward compatibility con specifications
-            specifications: item.specifications ? JSON.parse(item.specifications) : {}
+            specifications: typeof item.specifications === 'string' ? JSON.parse(item.specifications) : (item.specifications || {})
           })) || [],
           buyer: quote.buyer,
           user: quote.buyer
@@ -631,6 +639,7 @@ export class QuoteService {
   ): Promise<QuoteWithItems> {
     try {
       console.log('🔄 QuoteService: Actualizando estado de cotización', quoteId, 'a', newStatus);
+      console.log('🔍 DEBUG: Parámetros recibidos:', { quoteId, newStatus, userId, userType, comment, counterOfferData });
 
       // Preparar datos de actualización
       const updateData: any = { 
@@ -638,15 +647,45 @@ export class QuoteService {
         updatedAt: new Date()
       };
 
-      // Si es una contraoferta con nuevo precio, actualizar el total
-      if (newStatus === 'COUNTER_OFFER' && counterOfferData?.newPrice) {
+      console.log('🔍 DEBUG: updateData inicial:', updateData);
+
+      // ✅ NUEVA LÓGICA: Para contraofertas, guardar en campos pending, NO actualizar precio principal
+      if (newStatus === 'PENDING' && counterOfferData?.newPrice) {
+        // Solo guardar la contraoferta como pendiente, no actualizar precio principal
+        updateData.pendingCounterOfferPrice = counterOfferData.newPrice;
+        updateData.lastCounterOfferBy = userType;
+        updateData.counterOfferCount = { increment: 1 };
+        
+        if (counterOfferData.paymentTerms) {
+          updateData.pendingPaymentTerms = counterOfferData.paymentTerms;
+        }
+        if (counterOfferData.deliveryTerms) {
+          updateData.pendingDeliveryTerms = counterOfferData.deliveryTerms;
+        }
+        
+        console.log('💰 Contraoferta pendiente guardada:', {
+          precio: counterOfferData.newPrice,
+          términos: counterOfferData.paymentTerms,
+          usuario: userType
+        });
+      }
+      
+      // ✅ Solo actualizar precio principal cuando se acepta la cotización
+      if (newStatus === 'ACCEPTED' && counterOfferData?.newPrice) {
         updateData.totalPrice = counterOfferData.newPrice;
+        updateData.paymentTerms = counterOfferData.paymentTerms;
+        updateData.deliveryTerms = counterOfferData.deliveryTerms;
+        updateData.acceptedAt = new Date();
+        
+        // Limpiar campos pending al aceptar
+        updateData.pendingCounterOfferPrice = null;
+        updateData.pendingPaymentTerms = null;
+        updateData.pendingDeliveryTerms = null;
+        
+        console.log('✅ Precio principal actualizado al aceptar:', counterOfferData.newPrice);
       }
 
-      // Si hay términos de pago, actualizarlos
-      if (counterOfferData?.paymentTerms) {
-        updateData.paymentTerms = counterOfferData.paymentTerms;
-      }
+      console.log('🔍 DEBUG: updateData final antes de la actualización:', updateData);
 
       // Actualizar el estado de la cotización
       const updatedQuote = await prisma.quote.update({
@@ -664,20 +703,54 @@ export class QuoteService {
         }
       });
 
+      console.log('🔍 DEBUG: Cotización actualizada en BD:', {
+        id: updatedQuote.id,
+        status: updatedQuote.status,
+        totalPrice: updatedQuote.totalPrice,
+        paymentTerms: updatedQuote.paymentTerms
+      });
+
       // Crear comentario si se proporciona
       if (comment) {
         try {
-          await (prisma as any).quoteComment.create({
-            data: {
-              quoteId: quoteId,
-              userId: userId,
-              userType: userType,
-              comment: comment,
-              status: newStatus as any,
-              metadata: counterOfferData ? JSON.stringify(counterOfferData) : null
+          const commentData: any = {
+            quoteId: quoteId,
+            userId: userId,
+            userType: userType,
+            comment: comment,
+            status: newStatus as any
+          };
+
+          // ✅ Agregar datos específicos de contraoferta si existe
+          if (counterOfferData) {
+            commentData.action = newStatus === 'PENDING' ? 'COUNTER_OFFER' : 'ACCEPT';
+            commentData.counterOfferPrice = counterOfferData.newPrice || null;
+            commentData.paymentTerms = counterOfferData.paymentTerms || null;
+            commentData.deliveryTerms = counterOfferData.deliveryTerms || null;
+            
+            // ✅ ARREGLO: Serializar solo campos específicos para evitar error JSON
+            try {
+              const safeMetadata = {
+                newPrice: counterOfferData.newPrice,
+                paymentTerms: counterOfferData.paymentTerms,
+                deliveryTerms: counterOfferData.deliveryTerms
+              };
+              commentData.metadata = JSON.stringify(safeMetadata);
+            } catch (jsonError) {
+              console.warn('⚠️ Error serializando metadata, usando fallback:', jsonError);
+              commentData.metadata = JSON.stringify({ error: 'Serialization failed' });
             }
+          }
+
+          await (prisma as any).quoteComment.create({
+            data: commentData
           });
-          console.log('💬 Comentario agregado exitosamente');
+          
+          console.log('💬 Comentario de contraoferta guardado:', {
+            action: commentData.action,
+            precio: commentData.counterOfferPrice,
+            userType: userType
+          });
         } catch (commentError) {
           console.warn('⚠️ Error agregando comentario:', commentError);
         }
@@ -703,9 +776,11 @@ export class QuoteService {
       deliveryTerms?: string;
     }
   ): Promise<QuoteWithItems> {
+    // Cuando un comprador envía contraoferta, el estado debe cambiar a PENDING
+    // para que el proveedor pueda revisarla
     return this.updateQuoteStatus(
       quoteId,
-      'COUNTER_OFFER',
+      'PENDING', // Cambiar a PENDING en lugar de COUNTER_OFFER
       buyerId,
       'BUYER',
       counterOfferData.comment,
@@ -813,6 +888,10 @@ export class QuoteService {
       paymentConditions: quote.paymentTerms || 'Net 30 days',
       freightEstimate: quote.freightQuote ? Number(quote.freightQuote.cost) : 0,
       platformCommission: 0,
+      // ✅ Agregar campos de contraoferta pendiente
+      pendingCounterOfferPrice: quote.pendingCounterOfferPrice ? Number(quote.pendingCounterOfferPrice) : null,
+      pendingPaymentTerms: quote.pendingPaymentTerms || null,
+      pendingDeliveryTerms: quote.pendingDeliveryTerms || null,
       purchaseOrderFile: undefined, // Por implementar cuando el schema esté sincronizado
       freightDetails: quote.freightQuote ? {
         id: quote.freightQuote.id,
@@ -840,7 +919,7 @@ export class QuoteService {
         pricePerContainer: item.pricePerContainer ? Number(item.pricePerContainer) : (item.unitPrice ? Number(item.unitPrice) : 0),
         currency: item.currency || 'USD',
         quantity: item.quantity || 1,
-        specifications: item.specifications ? JSON.parse(item.specifications) : {}
+        specifications: typeof item.specifications === 'string' ? JSON.parse(item.specifications) : (item.specifications || {})
       })) || [],
       buyer: quote.buyer,
       user: quote.buyer

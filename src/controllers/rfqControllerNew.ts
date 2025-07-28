@@ -69,8 +69,7 @@ export class RFQControllerNew {
           throw new Error('CartService no está disponible');
         }
         
-        const cart = await CartService.getCart(userId);
-        cartItems = cart.items;
+        const cartItems = await CartService.getUserCartItems(userId);
         
         if (!cartItems || cartItems.length === 0) {
           console.log('⚠️ [sendCartQuote] Carrito vacío');
@@ -117,7 +116,7 @@ export class RFQControllerNew {
       // Limpiar el carrito después de enviar la cotización
       console.log('🧹 [sendCartQuote] Limpiando carrito...');
       if (CartService) {
-        await CartService.clearCart(userId);
+        await CartService.clearUserCart(userId);
         console.log('✅ [sendCartQuote] Carrito limpiado');
       }
 

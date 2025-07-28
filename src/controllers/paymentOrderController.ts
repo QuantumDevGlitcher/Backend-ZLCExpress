@@ -1,34 +1,53 @@
-// controllers/paymentOrderController.ts
-// Controlador para manejar órdenes de pago
+// ================================================================
+// PAYMENT ORDER CONTROLLER - Versión Limpia y Funcional
+// ================================================================
+// Descripción: Controlador para gestión de órdenes de pago
+// Integración completa con auth middleware usando JWT
 
 import { Request, Response } from 'express';
-import { PaymentOrderService } from '../services/paymentOrderService';
+import PaymentOrderService from '../services/paymentOrderService';
 
 export class PaymentOrderController {
   // Crear nueva orden de pago
-  static async createPaymentOrder(req: Request, res: Response) {
+  static async createPaymentOrder(req: Request, res: Response): Promise<void> {
     try {
       console.log('💳 PaymentOrderController: Creando orden de pago');
       
-      const { quoteId, buyerId, totalAmount, currency, paymentMethod } = req.body;
-      const userId = parseInt(req.headers['user-id'] as string) || buyerId || 1;
+      const userId = (req as any).user.id;
+      const { quoteId, totalAmount, currency, paymentMethod, expiresAt } = req.body;
 
-      if (!quoteId || !totalAmount) {
-        return res.status(400).json({
+      if (!quoteId || !totalAmount || !currency || !paymentMethod) {
+        res.status(400).json({
           success: false,
-          message: 'ID de cotización y monto total son requeridos'
+          message: 'Faltan campos obligatorios: quoteId, totalAmount, currency, paymentMethod'
         });
+        return;
+      }
+
+      // Verificar si ya existe una orden de pago para esta cotización
+      console.log('🔍 Verificando orden existente para cotización:', quoteId);
+      const existingOrder = await PaymentOrderService.getPaymentOrderByQuoteId(parseInt(quoteId), userId);
+      
+      if (existingOrder) {
+        console.log('✅ Orden existente encontrada:', existingOrder.orderNumber);
+        res.status(200).json({
+          success: true,
+          data: existingOrder,
+          message: 'Orden de pago ya existe para esta cotización'
+        });
+        return;
       }
 
       const paymentOrder = await PaymentOrderService.createPaymentOrder({
         quoteId: parseInt(quoteId),
         buyerId: userId,
         totalAmount: parseFloat(totalAmount),
-        currency: currency || 'USD',
-        paymentMethod: paymentMethod || 'paypal'
+        currency,
+        paymentMethod
       });
 
-      console.log('✅ PaymentOrderController: Orden de pago creada:', paymentOrder.orderNumber);
+      console.log(`✅ PaymentOrderController: Orden de pago creada exitosamente para usuario ${userId}`);
+
       res.status(201).json({
         success: true,
         data: paymentOrder,
@@ -37,30 +56,64 @@ export class PaymentOrderController {
 
     } catch (error: any) {
       console.error('❌ PaymentOrderController: Error creando orden de pago:', error);
+      
+      // Manejo específico para errores de constrains únicos
+      if (error.code === 'P2002' || error.message.includes('Unique constraint failed')) {
+        console.log('🔄 Constraint único violado, intentando obtener orden existente...');
+        try {
+          const { quoteId } = req.body;
+          const userId = (req as any).user.id;
+          const existingOrder = await PaymentOrderService.getPaymentOrderByQuoteId(parseInt(quoteId), userId);
+          
+          if (existingOrder) {
+            res.status(200).json({
+              success: true,
+              data: existingOrder,
+              message: 'Orden de pago ya existe para esta cotización'
+            });
+            return;
+          }
+        } catch (retryError) {
+          console.error('❌ Error al obtener orden existente:', retryError);
+        }
+      }
+      
       res.status(500).json({
         success: false,
-        message: error.message || 'Error al crear orden de pago'
+        message: error.message || 'Error interno del servidor'
       });
     }
   }
 
-  // Obtener orden de pago por ID
-  static async getPaymentOrderById(req: Request, res: Response) {
+  // Obtener orden de pago por ID de cotización
+  static async getPaymentOrderByQuoteId(req: Request, res: Response): Promise<void> {
     try {
-      console.log('💳 PaymentOrderController: Obteniendo orden de pago por ID');
+      console.log('💳 PaymentOrderController: Obteniendo orden de pago por quoteId');
       
-      const { orderId } = req.params;
+      const userId = (req as any).user.id;
+      const { quoteId } = req.params;
 
-      const paymentOrder = await PaymentOrderService.getPaymentOrderById(parseInt(orderId));
-
-      if (!paymentOrder) {
-        return res.status(404).json({
+      if (!quoteId) {
+        res.status(400).json({
           success: false,
-          message: 'Orden de pago no encontrada'
+          message: 'quoteId es requerido'
         });
+        return;
       }
 
-      res.json({
+      // Usar PaymentOrderService
+      const paymentOrder = await PaymentOrderService.getPaymentOrderByQuoteId(parseInt(quoteId), userId);
+
+      if (!paymentOrder) {
+        res.status(404).json({
+          success: false,
+          message: 'Orden de pago no encontrada',
+          data: null
+        });
+        return;
+      }
+
+      res.status(200).json({
         success: true,
         data: paymentOrder,
         message: 'Orden de pago obtenida exitosamente'
@@ -70,143 +123,161 @@ export class PaymentOrderController {
       console.error('❌ PaymentOrderController: Error obteniendo orden de pago:', error);
       res.status(500).json({
         success: false,
-        message: error.message || 'Error al obtener orden de pago'
+        message: error.message || 'Error interno del servidor'
       });
     }
   }
 
-  // Obtener orden de pago por número
-  static async getPaymentOrderByNumber(req: Request, res: Response) {
+  // Obtener orden de pago por orderNumber
+  static async getPaymentOrderByOrderNumber(req: Request, res: Response): Promise<void> {
     try {
-      console.log('💳 PaymentOrderController: Obteniendo orden de pago por número');
+      console.log('💳 PaymentOrderController: Obteniendo orden de pago por orderNumber');
       
+      const userId = (req as any).user.id;
       const { orderNumber } = req.params;
 
-      const paymentOrder = await PaymentOrderService.getPaymentOrderByNumber(orderNumber);
-
-      if (!paymentOrder) {
-        return res.status(404).json({
+      if (!orderNumber) {
+        res.status(400).json({
           success: false,
-          message: 'Orden de pago no encontrada'
+          message: 'orderNumber es requerido'
         });
+        return;
       }
 
-      res.json({
+      const paymentOrder = await PaymentOrderService.getPaymentOrderByOrderNumber(orderNumber, userId);
+
+      res.status(200).json({
         success: true,
         data: paymentOrder,
         message: 'Orden de pago obtenida exitosamente'
       });
 
     } catch (error: any) {
-      console.error('❌ PaymentOrderController: Error obteniendo orden de pago:', error);
+      console.error('❌ PaymentOrderController: Error obteniendo orden de pago por orderNumber:', error);
       res.status(500).json({
         success: false,
-        message: error.message || 'Error al obtener orden de pago'
+        message: error.message || 'Error interno del servidor'
       });
     }
   }
 
-  // Actualizar estado de pago
-  static async updatePaymentStatus(req: Request, res: Response) {
-    try {
-      console.log('💳 PaymentOrderController: Actualizando estado de pago');
-      
-      const { orderId } = req.params;
-      const { status, paypalPaymentId, paypalPayerId, paypalToken } = req.body;
-
-      const paymentOrder = await PaymentOrderService.updatePaymentStatus(
-        parseInt(orderId),
-        status,
-        {
-          paymentId: paypalPaymentId,
-          payerId: paypalPayerId,
-          token: paypalToken
-        }
-      );
-
-      res.json({
-        success: true,
-        data: paymentOrder,
-        message: 'Estado de pago actualizado exitosamente'
-      });
-
-    } catch (error: any) {
-      console.error('❌ PaymentOrderController: Error actualizando estado:', error);
-      res.status(500).json({
-        success: false,
-        message: error.message || 'Error al actualizar estado de pago'
-      });
-    }
-  }
-
-  // Obtener órdenes de pago de un usuario
-  static async getUserPaymentOrders(req: Request, res: Response) {
+  // Obtener órdenes de pago del usuario
+  static async getUserPaymentOrders(req: Request, res: Response): Promise<void> {
     try {
       console.log('💳 PaymentOrderController: Obteniendo órdenes de pago del usuario');
       
-      const { userId } = req.params;
+      const userId = (req as any).user.id;
 
-      const paymentOrders = await PaymentOrderService.getUserPaymentOrders(parseInt(userId));
+      const paymentOrders = await PaymentOrderService.getUserPaymentOrders(userId);
 
-      res.json({
+      res.status(200).json({
         success: true,
         data: paymentOrders,
-        count: paymentOrders.length,
         message: 'Órdenes de pago obtenidas exitosamente'
       });
 
     } catch (error: any) {
-      console.error('❌ PaymentOrderController: Error obteniendo órdenes:', error);
+      console.error('❌ PaymentOrderController: Error obteniendo órdenes de pago:', error);
       res.status(500).json({
         success: false,
-        message: error.message || 'Error al obtener órdenes de pago'
+        message: error.message || 'Error interno del servidor'
       });
     }
   }
 
-  // Procesar pago (simulación para PayPal)
-  static async processPayment(req: Request, res: Response) {
+  // Procesar pago (integración con PayPal)
+  static async processPayment(req: Request, res: Response): Promise<void> {
     try {
-      console.log('💳 PaymentOrderController: Procesando pago');
+      console.log('💳 PaymentOrderController: Procesando pago PayPal');
       
-      const { orderNumber } = req.params;
-      const { paymentId, payerId, token } = req.body;
+      const userId = (req as any).user.id;
+      const { 
+        orderNumber, 
+        paymentId, 
+        paypalOrderId, 
+        paypalPayerId, 
+        amount, 
+        currency, 
+        status 
+      } = req.body;
 
-      // Obtener la orden de pago
-      const paymentOrder = await PaymentOrderService.getPaymentOrderByNumber(orderNumber);
+      if (!orderNumber || !paymentId || !paypalOrderId) {
+        res.status(400).json({
+          success: false,
+          message: 'orderNumber, paymentId y paypalOrderId son requeridos'
+        });
+        return;
+      }
 
+      console.log('📊 Datos de pago recibidos:', {
+        orderNumber,
+        paymentId,
+        paypalOrderId,
+        paypalPayerId,
+        amount,
+        currency,
+        status,
+        userId
+      });
+
+      // Buscar la orden de pago en la base de datos
+      const paymentOrder = await PaymentOrderService.getPaymentOrderByOrderNumber(orderNumber, userId);
+      
       if (!paymentOrder) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           message: 'Orden de pago no encontrada'
         });
+        return;
       }
 
-      // Simular procesamiento de PayPal
-      console.log('💰 Simulando procesamiento de pago PayPal...');
-      
-      // En un entorno real, aquí se validaría el pago con PayPal
-      const isPaymentValid = true; // Simulación
-      
-      if (isPaymentValid) {
-        // Actualizar estado de pago
-        const updatedOrder = await PaymentOrderService.updatePaymentStatus(
-          paymentOrder.id,
-          'COMPLETED',
-          { paymentId, payerId, token }
-        );
-
-        res.json({
-          success: true,
-          data: updatedOrder,
-          message: 'Pago procesado exitosamente'
+      // Verificar que el monto coincida
+      if (paymentOrder.totalAmount !== parseFloat(amount)) {
+        console.error('❌ Monto no coincide:', {
+          esperado: paymentOrder.totalAmount,
+          recibido: parseFloat(amount)
         });
-      } else {
+        
         res.status(400).json({
           success: false,
-          message: 'Error validando el pago con PayPal'
+          message: 'El monto del pago no coincide con la orden'
         });
+        return;
       }
+
+      // Actualizar la orden con los datos de PayPal
+      const updatedOrder = await PaymentOrderService.updatePaymentStatus(
+        paymentOrder.id, 
+        userId, 
+        'COMPLETED',
+        {
+          paymentId: paymentId,
+          payerId: paypalPayerId
+        }
+      );
+
+      if (!updatedOrder) {
+        res.status(500).json({
+          success: false,
+          message: 'Error al actualizar la orden de pago'
+        });
+        return;
+      }
+
+      console.log('✅ Orden de pago actualizada exitosamente:', updatedOrder.orderNumber);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          orderNumber: updatedOrder.orderNumber,
+          paymentStatus: updatedOrder.paymentStatus,
+          paymentId: updatedOrder.paypalPaymentId,
+          paypalOrderId: paypalOrderId, // Keep in response even if not saved to DB yet
+          paypalPayerId: updatedOrder.paypalPayerId,
+          paidAt: updatedOrder.paidAt
+        },
+        message: 'Pago procesado y confirmado exitosamente'
+      });
 
     } catch (error: any) {
       console.error('❌ PaymentOrderController: Error procesando pago:', error);

@@ -26,9 +26,22 @@ const myQuotesService_1 = __importDefault(require("../services/myQuotesService")
 const getMyQuotes = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         console.log('📥 MyQuotesController: Obteniendo cotizaciones para My Quotes');
-        const userId = parseInt(req.headers['user-id']) || 1; // Mock user ID
-        const quotes = yield myQuotesService_1.default.getMyQuotes(userId);
-        console.log(`✅ MyQuotesController: ${quotes.length} cotizaciones obtenidas`);
+        const userId = parseInt(req.headers['user-id']);
+        const userType = req.headers['user-type'];
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Usuario no autenticado'
+            });
+        }
+        if (!userType || !['BUYER', 'SUPPLIER', 'BOTH'].includes(userType)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Tipo de usuario no válido'
+            });
+        }
+        const quotes = yield myQuotesService_1.default.getMyQuotes(userId, userType);
+        console.log(`✅ MyQuotesController: ${quotes.length} cotizaciones obtenidas para usuario ${userId} (${userType})`);
         res.json({
             success: true,
             data: quotes,
@@ -51,9 +64,15 @@ exports.getMyQuotes = getMyQuotes;
 const getMyQuotesStats = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         console.log('📥 MyQuotesController: Obteniendo estadísticas para My Quotes');
-        const userId = parseInt(req.headers['user-id']) || 1;
+        const userId = parseInt(req.headers['user-id']);
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Usuario no autenticado'
+            });
+        }
         const stats = yield myQuotesService_1.default.getMyQuotesStats(userId);
-        console.log('✅ MyQuotesController: Estadísticas obtenidas');
+        console.log(`✅ MyQuotesController: Estadísticas obtenidas para usuario ${userId}`);
         res.json({
             success: true,
             data: stats,

@@ -394,6 +394,13 @@ model Quote {
   currency          String         @default("USD") @db.VarChar(3)
   incoterm          String?        @db.VarChar(10)
   
+  // ✅ CAMPOS PARA CONTRAOFERTAS PENDIENTES
+  pendingCounterOfferPrice   Decimal? @map("pending_counter_offer_price") @db.Decimal(12, 2)
+  pendingPaymentTerms        String?  @map("pending_payment_terms") @db.Text
+  pendingDeliveryTerms       String?  @map("pending_delivery_terms") @db.Text
+  lastCounterOfferBy         String?  @map("last_counter_offer_by") @db.VarChar(20) // 'BUYER' o 'SUPPLIER'
+  counterOfferCount          Int      @default(0) @map("counter_offer_count")
+  
   // Términos y condiciones
   paymentTerms      String?        @map("payment_terms") @db.Text
   deliveryTerms     String?        @map("delivery_terms") @db.Text
@@ -660,6 +667,13 @@ model QuoteComment {
   comment   String   @db.Text
   status    QuoteStatus // El estado al momento del comentario
   
+  // ✅ NUEVOS CAMPOS PARA CONTRAOFERTAS
+  action              String?   @map("action") @db.VarChar(50) // 'COUNTER_OFFER', 'ACCEPT', 'REJECT', 'COMMENT'
+  counterOfferPrice   Decimal?  @map("counter_offer_price") @db.Decimal(12, 2)
+  paymentTerms        String?   @map("payment_terms") @db.Text
+  deliveryTerms       String?   @map("delivery_terms") @db.Text
+  metadata            Json?     // Para almacenar información adicional
+  
   // Metadatos
   createdAt DateTime @default(now()) @map("created_at")
   
@@ -670,6 +684,7 @@ model QuoteComment {
   // Índices
   @@index([quoteId])
   @@index([userId])
+  @@index([action])
   @@index([createdAt])
   @@map("quote_comments")
 }
@@ -693,6 +708,7 @@ model PaymentOrder {
   
   // Información de PayPal
   paypalPaymentId   String?  @map("paypal_payment_id") @db.VarChar(100)
+  paypalOrderId     String?  @map("paypal_order_id") @db.VarChar(100)
   paypalPayerId     String?  @map("paypal_payer_id") @db.VarChar(100)
   paypalToken       String?  @map("paypal_token") @db.VarChar(100)
   

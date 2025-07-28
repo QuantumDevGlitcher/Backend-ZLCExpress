@@ -6,6 +6,7 @@ import authRoutes from './authRoutes';
 import categoryRoutes from './categoryRoutes';
 import rfqRoutes from './rfqRoutes';
 import freightRoutes from './freightRoutes';
+import supplierRoutes from './supplierRoutes';
 
 const router = Router();
 
@@ -17,10 +18,11 @@ router.use('/cart', cartRoutes);
 router.use('/orders', orderRoutes);
 router.use('/rfq', rfqRoutes);
 router.use('/freight', freightRoutes);
+router.use('/suppliers', supplierRoutes);
 
 // Ruta de prueba
 router.get('/test', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'API funcionando correctamente',
     timestamp: new Date().toISOString()
   });

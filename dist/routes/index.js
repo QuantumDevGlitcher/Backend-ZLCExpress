@@ -11,11 +11,14 @@ const authRoutes_1 = __importDefault(require("./authRoutes"));
 const categoryRoutes_1 = __importDefault(require("./categoryRoutes"));
 const rfqRoutesNew_1 = __importDefault(require("./rfqRoutesNew")); // Nuevas rutas con PostgreSQL
 const freightRoutes_1 = __importDefault(require("./freightRoutes"));
+nueva-ultima
 const shippingRoutes_1 = __importDefault(require("./shippingRoutes"));
 const quoteRoutes_1 = __importDefault(require("./quoteRoutes"));
 const myQuotesRoutes_1 = __importDefault(require("./myQuotesRoutes"));
 const quoteStatusRoutes_1 = __importDefault(require("./quoteStatusRoutes")); // Nuevas rutas para estados de cotización
 const paymentOrderRoutes_1 = __importDefault(require("./paymentOrderRoutes"));
+const supplierRoutes_1 = __importDefault(require("./supplierRoutes"));
+master
 const router = (0, express_1.Router)();
 // Rutas de la API
 console.log('🔗 Configurando rutas principales...');
@@ -31,8 +34,11 @@ router.use('/my-quotes', myQuotesRoutes_1.default);
 router.use('/api', quoteStatusRoutes_1.default); // Rutas para gestión de estados de cotización
 router.use('/payment-orders', paymentOrderRoutes_1.default);
 router.use('/freight', freightRoutes_1.default);
+nueva-ultima
 router.use('/shipping', shippingRoutes_1.default);
 console.log('✅ Todas las rutas configuradas');
+router.use('/suppliers', supplierRoutes_1.default);
+master
 // Ruta de prueba
 router.get('/test', (req, res) => {
     res.json({

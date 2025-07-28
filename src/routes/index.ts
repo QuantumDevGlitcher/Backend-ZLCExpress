@@ -7,12 +7,15 @@ import categoryRoutes from './categoryRoutes';
 import rfqRoutes from './rfqRoutesSimple'; // Rutas RFQ simplificadas
 import rfqRoutesNew from './rfqRoutesNew'; // Nuevas rutas con PostgreSQL
 import freightRoutes from './freightRoutes';
+nueva-ultima
 import shippingRoutes from './shippingRoutes';
 import quoteRoutes from './quoteRoutes';
 import myQuotesRoutes from './myQuotesRoutes';
 import quoteStatusRoutes from './quoteStatusRoutes'; // Nuevas rutas para estados de cotización
 import paymentOrderRoutes from './paymentOrderRoutes';
 import paypalRoutes from './paypal'; // PayPal Server SDK routes
+import supplierRoutes from './supplierRoutes';
+master
 
 const router = Router();
 
@@ -31,17 +34,21 @@ router.use('/api', quoteStatusRoutes); // Rutas para gestión de estados de coti
 router.use('/payment-orders', paymentOrderRoutes);
 router.use('/paypal', paypalRoutes); // 💳 PayPal Integration
 router.use('/freight', freightRoutes);
+nueva-ultima
 router.use('/shipping', shippingRoutes);
 console.log('✅ Todas las rutas configuradas');
+router.use('/suppliers', supplierRoutes);
+master
 
 // Ruta de prueba
 router.get('/test', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'API funcionando correctamente',
     timestamp: new Date().toISOString()
   });
 });
 
+nueva-ultima
 // Ruta de prueba específica para quotes
 router.get('/quotes-test/:id', (req, res) => {
   console.log('🧪 Quotes test route - ID:', req.params.id);
@@ -53,3 +60,5 @@ router.get('/quotes-test/:id', (req, res) => {
 });
 
 export default router;
+export default router;
+master

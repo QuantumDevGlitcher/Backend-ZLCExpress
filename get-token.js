@@ -6,7 +6,7 @@ async function getToken() {
     console.log('🔐 Obteniendo token de autenticación...');
     
     const response = await axios.post('http://localhost:3000/api/auth/login', {
-      email: 'comprador@demo.com',
+      email: 'buyer@demo.com',
       password: 'demo123'
     });
 

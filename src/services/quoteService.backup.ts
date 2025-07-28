@@ -186,6 +186,15 @@ export class QuoteService {
       
       console.log('🧹 Datos limpios para crear cotización:', cleanQuoteData);
       
+      // ✅ DEBUG: Inspeccionar cada campo individualmente 
+      console.log('🔍 INSPECCIONANDO DATOS CAMPO POR CAMPO:');
+      Object.keys(cleanQuoteData).forEach(key => {
+        console.log(`   ${key}:`, typeof (cleanQuoteData as any)[key], (cleanQuoteData as any)[key]);
+      });
+      
+      // ✅ DEBUG: Serializar para verificar que no hay campos ocultos
+      console.log('🔍 JSON SERIALIZADO:', JSON.stringify(cleanQuoteData, null, 2));
+      
       const quote: any = await prisma.quote.create({
         data: cleanQuoteData,
         include: {

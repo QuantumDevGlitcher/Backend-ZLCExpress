@@ -11,6 +11,7 @@ const authRoutes_1 = __importDefault(require("./authRoutes"));
 const categoryRoutes_1 = __importDefault(require("./categoryRoutes"));
 const rfqRoutes_1 = __importDefault(require("./rfqRoutes"));
 const freightRoutes_1 = __importDefault(require("./freightRoutes"));
+const supplierRoutes_1 = __importDefault(require("./supplierRoutes"));
 const router = (0, express_1.Router)();
 // Rutas de la API
 router.use('/auth', authRoutes_1.default);
@@ -20,6 +21,7 @@ router.use('/cart', cartRoutes_1.default);
 router.use('/orders', orderRoutes_1.default);
 router.use('/rfq', rfqRoutes_1.default);
 router.use('/freight', freightRoutes_1.default);
+router.use('/suppliers', supplierRoutes_1.default);
 // Ruta de prueba
 router.get('/test', (req, res) => {
     res.json({

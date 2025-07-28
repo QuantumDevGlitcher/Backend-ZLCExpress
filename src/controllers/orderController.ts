@@ -22,8 +22,7 @@ export const getOrders = async (req: Request, res: Response) => {
 export const getOrderById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = "1"; // Mock
-    const order = await OrderService.getOrderById(parseInt(id), userId);
+    const order = await OrderService.getOrderById(parseInt(id));
     
     if (!order) {
       return res.status(404).json({ error: 'Pedido no encontrado' });
@@ -40,13 +39,21 @@ export const createOrder = async (req: Request, res: Response) => {
     const userId = "1"; // Mock
     const { shippingAddress, paymentMethod } = req.body;
     
-    if (!shippingAddress || !paymentMethod) {
+    if (!shippingAddress) {
       return res.status(400).json({
-        error: 'Dirección de envío y método de pago son requeridos'
+        error: 'Dirección de envío es requerida'
       });
     }
 
-    const order = await OrderService.createOrder(userId, { shippingAddress, paymentMethod });
+    // El OrderService.createOrder espera (cartId, userId, orderData)
+    // Como no tenemos cartId aquí, vamos a usar un cartId mock o crear uno diferente
+    const cartId = "1"; // Mock cartId
+    const orderData = { 
+      shippingAddress,
+      // paymentMethod no está en la interfaz OrderData del servicio
+    };
+    
+    const order = await OrderService.createOrder(cartId, userId, orderData);
     res.status(201).json(order);
   } catch (error: any) {
     res.status(400).json({ error: error.message });

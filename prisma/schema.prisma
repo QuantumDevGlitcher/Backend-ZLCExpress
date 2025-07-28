@@ -59,6 +59,16 @@ model User {
   products Product[]
   orders   Order[]
   orderDetails OrderDetail[]
+  cartItems CartItem[]
+  shippingQuotes ShippingQuote[]
+  
+  // Relaciones de cotizaciones
+  quotesAsBuyer    Quote[] @relation("QuoteBuyer")
+  quotesAsSupplier Quote[] @relation("QuoteSupplier")
+  quoteResponses   QuoteResponse[] @relation("QuoteResponseSupplier")
+  quoteDocuments   QuoteDocument[] @relation("QuoteDocumentUploader")
+  quoteComments    QuoteComment[] @relation("QuoteComments")
+  paymentOrders    PaymentOrder[] @relation("PaymentOrderBuyer")
 
   // Índices
   @@index([email])
@@ -197,6 +207,9 @@ model Product {
   category     Category      @relation(fields: [categoryId], references: [id])
   supplier     User          @relation(fields: [supplierId], references: [id])
   orderDetails OrderDetail[]
+  cartItems    CartItem[]
+  quotes       Quote[]
+  quoteItems   QuoteItem[]
 
   // Índices
   @@index([title])
@@ -227,6 +240,21 @@ model Order {
   paymentTerms    String?     @map("payment_terms") @db.Text
   deliveryTerms   String?     @map("delivery_terms") @db.Text
   notes           String?     @db.Text
+  
+  // Información de shipping
+  shippingAddress String?     @map("shipping_address") @db.Text
+  paymentMethod   String?     @map("payment_method") @db.VarChar(100)
+  
+  // Datos de flete
+  originPort      String?     @map("origin_port") @db.VarChar(255)
+  destinationPort String?     @map("destination_port") @db.VarChar(255)
+  containerType   String?     @map("container_type") @db.VarChar(50)
+  estimatedShippingDate DateTime? @map("estimated_shipping_date")
+  shippingCost    Decimal?    @db.Decimal(10, 2) @map("shipping_cost")
+  shippingCarrier String?     @map("shipping_carrier") @db.VarChar(255)
+  transitTime     Int?        @map("transit_time") // días
+  incoterm        String?     @db.VarChar(10)
+  
   expiresAt       DateTime?   @map("expires_at")
   confirmedAt     DateTime?   @map("confirmed_at")
   shippedAt       DateTime?   @map("shipped_at")
@@ -239,6 +267,7 @@ model Order {
   // Relaciones
   buyer        User          @relation(fields: [buyerId], references: [id])
   orderDetails OrderDetail[]
+  shippingQuotes ShippingQuote[]
 
   // Índices
   @@index([orderNumber])
@@ -282,6 +311,289 @@ model OrderDetail {
 }
 
 // ================================================================
+// MODELO: ShippingQuote (cotizaciones de flete)
+// ================================================================
+
+model ShippingQuote {
+  id              Int      @id @default(autoincrement())
+  orderId         Int?     @map("order_id")
+  userId          Int      @map("user_id")
+  
+  // Información de ruta
+  originPort      String   @map("origin_port") @db.VarChar(255)
+  destinationPort String   @map("destination_port") @db.VarChar(255)
+  containerType   String   @map("container_type") @db.VarChar(50)
+  containerCount  Int      @map("container_count") @default(1)
+  
+  // Información del transportista
+  carrier         String   @db.VarChar(255)
+  carrierCode     String   @map("carrier_code") @db.VarChar(50)
+  serviceType     String   @map("service_type") @db.VarChar(100)
+  
+  // Costos y tiempos
+  cost            Decimal  @db.Decimal(10, 2)
+  currency        String   @db.VarChar(3)
+  transitTime     Int      @map("transit_time") // días
+  
+  // Fechas
+  estimatedDeparture DateTime @map("estimated_departure")
+  estimatedArrival   DateTime @map("estimated_arrival")
+  validUntil         DateTime @map("valid_until")
+  
+  // Incoterms y condiciones
+  incoterm        String   @db.VarChar(10)
+  conditions      String?  @db.Text
+  
+  // Estado
+  isSelected      Boolean  @default(false) @map("is_selected")
+  status          String   @default("PENDING") @db.VarChar(50)
+  
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User   @relation(fields: [userId], references: [id])
+  quote Quote? // Relación inversa con Quote
+
+  // Índices
+  @@index([orderId])
+  @@index([userId])
+  @@index([originPort])
+  @@index([destinationPort])
+  @@index([carrier])
+  @@index([cost])
+  @@index([validUntil])
+  @@index([isSelected])
+  @@map("shipping_quotes")
+}
+
+// ================================================================
+// MODELO: Quote (cotizaciones/RFQs persistentes)
+// ================================================================
+
+model Quote {
+  id                Int            @id @default(autoincrement())
+  quoteNumber       String         @unique @map("quote_number") @db.VarChar(50)
+  buyerId           Int            @map("buyer_id")
+  supplierId        Int            @map("supplier_id")
+  
+  // Información del producto/RFQ
+  productId         Int?           @map("product_id")
+  productTitle      String         @map("product_title") @db.VarChar(255)
+  containerQuantity Int            @map("container_quantity")
+  containerType     String         @map("container_type") @db.VarChar(20)
+  
+  // Estado y seguimiento
+  status            QuoteStatus    @default(PENDING)
+  priority          String         @default("medium") @db.VarChar(20)
+  
+  // Información comercial
+  unitPrice         Decimal?       @map("unit_price") @db.Decimal(12, 2)
+  totalPrice        Decimal?       @map("total_price") @db.Decimal(12, 2)
+  currency          String         @default("USD") @db.VarChar(3)
+  incoterm          String?        @db.VarChar(10)
+  
+  // Términos y condiciones
+  paymentTerms      String?        @map("payment_terms") @db.Text
+  deliveryTerms     String?        @map("delivery_terms") @db.Text
+  leadTime          Int?           @map("lead_time") // días
+  minimumOrderQty   Int?           @map("minimum_order_qty")
+  
+  // Información adicional
+  logisticsComments String?        @map("logistics_comments") @db.Text
+  specialRequirements String?      @map("special_requirements") @db.Text
+  supplierComments  String?        @map("supplier_comments") @db.Text
+  
+  // Archivo de orden de compra
+  purchaseOrderFileName String?    @map("purchase_order_file_name") @db.VarChar(255)
+  purchaseOrderFileUrl  String?    @map("purchase_order_file_url") @db.Text
+  purchaseOrderFileSize Int?       @map("purchase_order_file_size")
+  purchaseOrderFileType String?    @map("purchase_order_file_type") @db.VarChar(100)
+  
+  // Fechas importantes
+  requestDate       DateTime       @default(now()) @map("request_date")
+  responseDeadline  DateTime?      @map("response_deadline")
+  quotedAt          DateTime?      @map("quoted_at")
+  validUntil        DateTime?      @map("valid_until")
+  acceptedAt        DateTime?      @map("accepted_at")
+  expiredAt         DateTime?      @map("expired_at")
+  
+  // Información de flete
+  freightQuoteId    Int?           @unique @map("freight_quote_id")
+  estimatedValue    Decimal?       @map("estimated_value") @db.Decimal(12, 2)
+  
+  // Metadatos
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  // Relaciones
+  buyer             User           @relation("QuoteBuyer", fields: [buyerId], references: [id])
+  supplier          User           @relation("QuoteSupplier", fields: [supplierId], references: [id])
+  product           Product?       @relation(fields: [productId], references: [id])
+  freightQuote      ShippingQuote? @relation(fields: [freightQuoteId], references: [id])
+  quoteItems        QuoteItem[]
+  quoteDocuments    QuoteDocument[]
+  quoteResponses    QuoteResponse[]
+  quoteComments     QuoteComment[]
+  paymentOrder      PaymentOrder?
+
+  // Índices
+  @@index([quoteNumber])
+  @@index([buyerId])
+  @@index([supplierId])
+  @@index([productId])
+  @@index([status])
+  @@index([requestDate])
+  @@index([validUntil])
+  @@index([totalPrice])
+  @@map("quotes")
+}
+
+// ================================================================
+// MODELO: QuoteItem (items específicos de una cotización)
+// ================================================================
+
+model QuoteItem {
+  id                Int     @id @default(autoincrement())
+  quoteId           Int     @map("quote_id")
+  productId         Int?    @map("product_id")
+  
+  // ✅ Información detallada del producto
+  productTitle      String? @map("product_title") @db.VarChar(255)
+  supplierName      String? @map("supplier_name") @db.VarChar(255)
+  supplierId        Int?    @map("supplier_id")
+  containerType     String? @map("container_type") @db.VarChar(20)
+  incoterm          String? @map("incoterm") @db.VarChar(20)
+  pricePerContainer Decimal? @map("price_per_container") @db.Decimal(12, 2)
+  
+  // ✅ Campos originales
+  itemDescription   String  @map("item_description") @db.VarChar(255)
+  quantity          Int
+  unitPrice         Decimal @map("unit_price") @db.Decimal(10, 2)
+  totalPrice        Decimal @map("total_price") @db.Decimal(12, 2)
+  currency          String  @default("USD") @db.VarChar(3)
+  specifications    Json?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  quote    Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product  Product? @relation(fields: [productId], references: [id])
+
+  // Índices
+  @@index([quoteId])
+  @@index([productId])
+  @@index([productTitle])
+  @@index([supplierId])
+  @@map("quote_items")
+}
+
+// ================================================================
+// MODELO: QuoteResponse (respuestas del proveedor)
+// ================================================================
+
+model QuoteResponse {
+  id                  Int      @id @default(autoincrement())
+  quoteId             Int      @map("quote_id")
+  supplierId          Int      @map("supplier_id")
+  responseType        String   @map("response_type") @db.VarChar(20) // "quote", "counter_offer", "rejection"
+  
+  // Cotización del proveedor
+  unitPrice           Decimal? @map("unit_price") @db.Decimal(12, 2)
+  totalPrice          Decimal? @map("total_price") @db.Decimal(12, 2)
+  currency            String   @default("USD") @db.VarChar(3)
+  
+  // Términos comerciales
+  deliveryTime        Int?     @map("delivery_time") // días
+  paymentTerms        String?  @map("payment_terms") @db.Text
+  validityPeriod      Int?     @map("validity_period") // días
+  minimumOrderQty     Int?     @map("minimum_order_qty")
+  
+  // Comentarios y condiciones
+  supplierComments    String?  @map("supplier_comments") @db.Text
+  technicalSpecs      String?  @map("technical_specs") @db.Text
+  specialConditions   String?  @map("special_conditions") @db.Text
+  rejectionReason     String?  @map("rejection_reason") @db.Text
+  
+  // Estado y fechas
+  status              String   @default("submitted") @db.VarChar(20)
+  isCounterOffer      Boolean  @default(false) @map("is_counter_offer")
+  responseDate        DateTime @default(now()) @map("response_date")
+  validUntil          DateTime? @map("valid_until")
+  
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  quote    Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  supplier User  @relation("QuoteResponseSupplier", fields: [supplierId], references: [id])
+
+  // Índices
+  @@index([quoteId])
+  @@index([supplierId])
+  @@index([responseType])
+  @@index([status])
+  @@index([responseDate])
+  @@map("quote_responses")
+}
+
+// ================================================================
+// MODELO: QuoteDocument (documentos adjuntos a cotizaciones)
+// ================================================================
+
+model QuoteDocument {
+  id           Int      @id @default(autoincrement())
+  quoteId      Int      @map("quote_id")
+  documentType String   @map("document_type") @db.VarChar(50)
+  title        String   @db.VarChar(255)
+  fileName     String   @map("file_name") @db.VarChar(255)
+  fileUrl      String   @map("file_url") @db.VarChar(500)
+  fileSize     Int?     @map("file_size") // bytes
+  uploadedBy   Int      @map("uploaded_by")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+
+  // Relaciones
+  quote    Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  uploader User  @relation("QuoteDocumentUploader", fields: [uploadedBy], references: [id])
+
+  // Índices
+  @@index([quoteId])
+  @@index([documentType])
+  @@index([uploadedBy])
+  @@map("quote_documents")
+}
+
+// ================================================================
+// MODELO: CartItem (items en el carrito de compras)
+// ================================================================
+
+model CartItem {
+  id                String    @id @default(cuid())
+  userId            Int       @map("user_id")
+  productId         Int       @map("product_id")
+  containerType     String    @map("container_type") @db.VarChar(10)
+  containerQuantity Int       @map("container_quantity")
+  pricePerContainer Decimal   @map("price_per_container") @db.Decimal(12, 2)
+  currency          String    @default("USD") @db.VarChar(3)
+  incoterm          String    @db.VarChar(20)
+  customPrice       Decimal?  @map("custom_price") @db.Decimal(12, 2)
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  // Relaciones
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // Índices
+  @@index([userId])
+  @@index([productId])
+  @@index([createdAt])
+  @@map("cart_items")
+}
+
+// ================================================================
 // ENUMS
 // ================================================================
 
@@ -321,4 +633,96 @@ enum OrderStatus {
   EXPIRED    @map("expired")
 
   @@map("order_status")
+}
+
+enum QuoteStatus {
+  PENDING        @map("pending")
+  DRAFT          @map("draft")
+  SENT           @map("sent")
+  QUOTED         @map("quoted")
+  COUNTER_OFFER  @map("counter_offer")
+  ACCEPTED       @map("accepted")
+  REJECTED       @map("rejected")
+  EXPIRED        @map("expired")
+  CANCELLED      @map("cancelled")
+
+  @@map("quote_status")
+}
+
+// ================================================================
+// MODELO: QuoteComment (Historial de comentarios en cotizaciones)
+// ================================================================
+model QuoteComment {
+  id        Int      @id @default(autoincrement())
+  quoteId   Int      @map("quote_id")
+  userId    Int      @map("user_id")
+  userType  String   @map("user_type") @db.VarChar(20) // 'BUYER' o 'SUPPLIER'
+  comment   String   @db.Text
+  status    QuoteStatus // El estado al momento del comentario
+  
+  // Metadatos
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  // Relaciones
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  user      User     @relation("QuoteComments", fields: [userId], references: [id])
+  
+  // Índices
+  @@index([quoteId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("quote_comments")
+}
+
+// ================================================================
+// MODELO: PaymentOrder (Órdenes de pago)
+// ================================================================
+model PaymentOrder {
+  id                Int      @id @default(autoincrement())
+  orderNumber       String   @unique @map("order_number") @db.VarChar(50)
+  quoteId           Int      @unique @map("quote_id")
+  buyerId           Int      @map("buyer_id")
+  
+  // Información comercial
+  totalAmount       Decimal  @map("total_amount") @db.Decimal(12, 2)
+  currency          String   @default("USD") @db.VarChar(3)
+  
+  // Información de pago
+  paymentMethod     String   @map("payment_method") @db.VarChar(50) // 'paypal', 'card', etc.
+  paymentStatus     PaymentStatus @default(PENDING) @map("payment_status")
+  
+  // Información de PayPal
+  paypalPaymentId   String?  @map("paypal_payment_id") @db.VarChar(100)
+  paypalPayerId     String?  @map("paypal_payer_id") @db.VarChar(100)
+  paypalToken       String?  @map("paypal_token") @db.VarChar(100)
+  
+  // Fechas importantes
+  createdAt         DateTime @default(now()) @map("created_at")
+  paidAt            DateTime? @map("paid_at")
+  expiresAt         DateTime @map("expires_at")
+  
+  // Relaciones
+  quote             Quote    @relation(fields: [quoteId], references: [id])
+  buyer             User     @relation("PaymentOrderBuyer", fields: [buyerId], references: [id])
+  
+  // Índices
+  @@index([orderNumber])
+  @@index([quoteId])
+  @@index([buyerId])
+  @@index([paymentStatus])
+  @@map("payment_orders")
+}
+
+// ================================================================
+// ENUMS ADICIONALES
+// ================================================================
+enum PaymentStatus {
+  PENDING    @map("pending")
+  PROCESSING @map("processing")
+  COMPLETED  @map("completed")
+  FAILED     @map("failed")
+  CANCELLED  @map("cancelled")
+  REFUNDED   @map("refunded")
+  
+  @@map("payment_status")
 }

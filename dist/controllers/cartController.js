@@ -20,7 +20,22 @@ class CartController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 // En producción, extraerías el userId del token JWT
-                const userId = req.headers['user-id'] || 'demo_user';
+                const userIdHeader = req.headers['user-id'];
+                if (!userIdHeader) {
+                    res.status(401).json({
+                        success: false,
+                        message: 'Usuario no autenticado'
+                    });
+                    return;
+                }
+                const userId = parseInt(userIdHeader);
+                if (isNaN(userId)) {
+                    res.status(400).json({
+                        success: false,
+                        message: 'ID de usuario inválido'
+                    });
+                    return;
+                }
                 const cart = yield cartService_1.CartService.getCart(userId);
                 res.status(200).json({
                     success: true,
@@ -44,7 +59,22 @@ class CartController {
     static addToCart(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const userId = req.headers['user-id'] || 'demo_user';
+                const userIdHeader = req.headers['user-id'];
+                if (!userIdHeader) {
+                    res.status(401).json({
+                        success: false,
+                        message: 'Usuario no autenticado'
+                    });
+                    return;
+                }
+                const userId = parseInt(userIdHeader);
+                if (isNaN(userId)) {
+                    res.status(400).json({
+                        success: false,
+                        message: 'ID de usuario inválido'
+                    });
+                    return;
+                }
                 const { productId, containerQuantity, containerType, incoterm, customPrice, notes } = req.body;
                 // Log para debugging
                 console.log('🛒 Backend - Datos recibidos:', {
@@ -74,7 +104,15 @@ class CartController {
                     });
                     return;
                 }
-                const cartItem = yield cartService_1.CartService.addToCart(userId, productId, parseInt(containerQuantity), containerType || '20GP', incoterm || 'CIF', customPrice ? parseFloat(customPrice) : undefined, notes);
+                const productIdNum = parseInt(productId);
+                if (isNaN(productIdNum)) {
+                    res.status(400).json({
+                        success: false,
+                        message: 'ID de producto inválido'
+                    });
+                    return;
+                }
+                const cartItem = yield cartService_1.CartService.addToCart(userId, productIdNum, parseInt(containerQuantity), containerType || '40GP', incoterm || 'FOB', customPrice ? parseFloat(customPrice) : undefined, notes);
                 res.status(201).json({
                     success: true,
                     message: 'Producto agregado al carrito exitosamente',
@@ -97,7 +135,22 @@ class CartController {
     static updateCartItem(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const userId = req.headers['user-id'] || 'demo_user';
+                const userIdHeader = req.headers['user-id'];
+                if (!userIdHeader) {
+                    res.status(401).json({
+                        success: false,
+                        message: 'Usuario no autenticado'
+                    });
+                    return;
+                }
+                const userId = parseInt(userIdHeader);
+                if (isNaN(userId)) {
+                    res.status(400).json({
+                        success: false,
+                        message: 'ID de usuario inválido'
+                    });
+                    return;
+                }
                 const { itemId } = req.params;
                 const { containerQuantity, customPrice, notes } = req.body;
                 if (!containerQuantity || containerQuantity < 1) {
@@ -130,7 +183,22 @@ class CartController {
     static removeFromCart(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const userId = req.headers['user-id'] || 'demo_user';
+                const userIdHeader = req.headers['user-id'];
+                if (!userIdHeader) {
+                    res.status(401).json({
+                        success: false,
+                        message: 'Usuario no autenticado'
+                    });
+                    return;
+                }
+                const userId = parseInt(userIdHeader);
+                if (isNaN(userId)) {
+                    res.status(400).json({
+                        success: false,
+                        message: 'ID de usuario inválido'
+                    });
+                    return;
+                }
                 const { itemId } = req.params;
                 const removed = yield cartService_1.CartService.removeFromCart(userId, itemId);
                 if (removed) {
@@ -162,7 +230,22 @@ class CartController {
     static clearCart(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const userId = req.headers['user-id'] || 'demo_user';
+                const userIdHeader = req.headers['user-id'];
+                if (!userIdHeader) {
+                    res.status(401).json({
+                        success: false,
+                        message: 'Usuario no autenticado'
+                    });
+                    return;
+                }
+                const userId = parseInt(userIdHeader);
+                if (isNaN(userId)) {
+                    res.status(400).json({
+                        success: false,
+                        message: 'ID de usuario inválido'
+                    });
+                    return;
+                }
                 const cleared = yield cartService_1.CartService.clearCart(userId);
                 res.status(200).json({
                     success: true,
@@ -185,7 +268,22 @@ class CartController {
     static getCartStats(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const userId = req.headers['user-id'] || 'demo_user';
+                const userIdHeader = req.headers['user-id'];
+                if (!userIdHeader) {
+                    res.status(401).json({
+                        success: false,
+                        message: 'Usuario no autenticado'
+                    });
+                    return;
+                }
+                const userId = parseInt(userIdHeader);
+                if (isNaN(userId)) {
+                    res.status(400).json({
+                        success: false,
+                        message: 'ID de usuario inválido'
+                    });
+                    return;
+                }
                 const stats = yield cartService_1.CartService.getCartStats(userId);
                 res.status(200).json({
                     success: true,

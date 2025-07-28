@@ -1,14 +1,15 @@
 import { Router } from 'express';
-import { 
-  getProducts, 
-  getProductById, 
+import {
+  getProducts,
+  getProductById,
   getFeaturedProducts,
   getNewProducts,
   searchProducts,
-  createProduct, 
-  updateProduct, 
-  deleteProduct 
+  updateProduct,
+  deleteProduct
 } from '../controllers/productPrismaController';
+import { createProduct } from '../controllers/productPgController';
+import { checkRole } from '../middleware/authMiddleware';
 
 const router = Router();
 
@@ -30,7 +31,7 @@ router.get('/search/:query', searchProducts);
 router.get('/:id', getProductById);
 
 // POST /api/products - Crear nuevo producto
-router.post('/', createProduct);
+router.post('/', checkRole('supplier'), createProduct);
 
 // PUT /api/products/:id - Actualizar producto
 router.put('/:id', updateProduct);

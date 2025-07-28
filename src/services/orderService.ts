@@ -1,135 +1,341 @@
-import { Order, OrderItem, OrderStatus, CreateOrderData } from '../types';
-import { CartService, Cart, CartItem } from './cartService';
-import { ProductService } from './productService';
+import { PrismaClient } from '@prisma/client';
+import { CartService } from './cartService';
+// import { ShippingService } from './shippingService';
+import { ShippingQuoteRequest } from '../types/shipping';
 
-// Mock database
-const mockOrders: Order[] = [];
-const mockOrderItems: OrderItem[] = [];
-let nextOrderId = 1;
-let nextOrderItemId = 1;
+const prisma = new PrismaClient();
+
+export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PROCESSING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+
+export interface OrderData {
+  shippingAddress?: string;
+  originPort?: string;
+  destinationPort?: string;
+  containerType?: string;
+  estimatedShippingDate?: Date;
+  requestShippingQuotes?: boolean;
+}
 
 export class OrderService {
-  static async createOrder(userId: string, orderData: CreateOrderData): Promise<Order> {
-    // Obtener carrito del usuario
-    const cart = await CartService.getCart(userId);
-    
-    if (cart.items.length === 0) {
-      throw new Error('El carrito está vacío');
-    }
+  /**
+   * Crear orden desde el carrito (sin shipping)
+   */
+  static async createOrder(cartId: string, userId: string | number, orderData: OrderData = {}) {
+    try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId) : userId;
+      console.log('Creating order for user:', userIdNum);
+      console.log('Order data:', orderData);
 
-    // Verificar stock de todos los productos
-    for (const item of cart.items) {
-      const product = await ProductService.getProductById(item.productId);
-      if (!product || product.stockContainers < item.containerQuantity) {
-        throw new Error(`Stock insuficiente para el producto: ${product?.name || 'Desconocido'}`);
+      // Obtener carrito del usuario
+      const cart = await CartService.getCart(userIdNum);
+      console.log('User cart:', cart);
+
+      if (!cart || cart.items.length === 0) {
+        throw new Error('El carrito esta vacio');
       }
-    }
 
-    // Crear el pedido
-    const newOrder: Order = {
-      id: nextOrderId++,
-      userId: parseInt(userId),
-      status: OrderStatus.PENDING,
-      total: cart.totalAmount,
-      shippingAddress: orderData.shippingAddress,
-      paymentMethod: orderData.paymentMethod,
-      items: [],
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+      // Calcular items y total
+      const orderItems = [];
+      let totalAmount = 0;
 
-    // Crear los items del pedido
-    const orderItems: OrderItem[] = [];
-    for (const cartItem of cart.items) {
-      const product = await ProductService.getProductById(cartItem.productId);
-      if (product) {
-        const orderItem: OrderItem = {
-          id: nextOrderItemId++,
-          orderId: newOrder.id,
+      for (const cartItem of cart.items) {
+        // Obtener informacion actualizada del producto
+        const product = await prisma.product.findUnique({
+          where: { id: cartItem.productId },
+          include: { category: true }
+        });
+
+        if (!product) {
+          throw new Error(`Producto ${cartItem.productId} no encontrado`);
+        }
+
+        console.log(`Checking stock for product ${cartItem.productId}, needed: ${cartItem.containerQuantity}, available: ${product.stockContainers}`);
+
+        if (product.stockContainers < cartItem.containerQuantity) {
+          throw new Error(`Stock insuficiente para ${product.name}. Disponible: ${product.stockContainers}, Solicitado: ${cartItem.containerQuantity}`);
+        }
+
+        const itemTotal = product.pricePerContainer * cartItem.containerQuantity;
+        totalAmount += itemTotal;
+
+        orderItems.push({
           productId: cartItem.productId,
-          product,
-          quantity: cartItem.containerQuantity,
-          price: product.pricePerContainer
-        };
-        orderItems.push(orderItem);
-        mockOrderItems.push(orderItem);
-
-        // Actualizar stock
-        await ProductService.updateStock(cartItem.productId, cartItem.containerQuantity);
+          containerQuantity: cartItem.containerQuantity,
+          pricePerContainer: product.pricePerContainer,
+          totalPrice: itemTotal
+        });
       }
+
+      console.log('Total amount:', totalAmount);
+
+      // Crear orden en base de datos
+      const newOrder = await prisma.order.create({
+        data: {
+          userId: userIdNum,
+          status: 'PENDING',
+          totalAmount: totalAmount,
+          shippingAddress: orderData.shippingAddress || '',
+          originPort: orderData.originPort,
+          destinationPort: orderData.destinationPort,
+          containerType: orderData.containerType,
+          estimatedShippingDate: orderData.estimatedShippingDate
+        }
+      });
+
+      console.log('Order created with ID:', newOrder.id);
+
+      // Crear items de la orden
+      const createdOrderItems = await Promise.all(
+        orderItems.map(item =>
+          prisma.orderItem.create({
+            data: {
+              orderId: newOrder.id,
+              productId: item.productId,
+              containerQuantity: item.containerQuantity,
+              pricePerContainer: item.pricePerContainer,
+              totalPrice: item.totalPrice
+            }
+          })
+        )
+      );
+
+      console.log('Created', createdOrderItems.length, 'order items');
+
+      // Limpiar carrito
+      await CartService.clearCart(userIdNum);
+      console.log('Cart cleared');
+
+      // Actualizar stock de productos
+      for (const cartItem of cart.items) {
+        await prisma.product.update({
+          where: { id: cartItem.productId },
+          data: {
+            stockContainers: {
+              decrement: cartItem.containerQuantity
+            }
+          }
+        });
+      }
+
+      console.log('Order created successfully');
+
+      return {
+        order: newOrder,
+        items: createdOrderItems
+      };
+
+    } catch (error: any) {
+      console.error('Error creating order:', error);
+      throw error;
     }
-
-    newOrder.items = orderItems;
-    mockOrders.push(newOrder);
-
-    // Limpiar carrito
-    await CartService.clearCart(userId);
-
-    return newOrder;
   }
 
-  static async getOrdersByUserId(userId: string): Promise<Order[]> {
-    const userIdNum = parseInt(userId);
-    const userOrders = mockOrders.filter(order => order.userId === userIdNum);
-    
-    // Obtener items para cada pedido
-    return await Promise.all(
-      userOrders.map(async (order) => {
-        const items = mockOrderItems.filter(item => item.orderId === order.id);
-        const itemsWithProducts = await Promise.all(
-          items.map(async (item) => {
-            const product = await ProductService.getProductById(item.productId);
-            return {
-              ...item,
-              product: product || undefined
-            };
-          })
-        );
+  /**
+   * Crear orden con integración de shipping desde carrito
+   */
+  static async createOrderWithShipping(cartId: string, userId: string | number, orderData: OrderData) {
+    try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId) : userId;
+      console.log('Creating order with shipping for user:', userIdNum);
+      console.log('Order data:', orderData);
+
+      // Obtener carrito del usuario
+      const cart = await CartService.getCart(userIdNum);
+      console.log('User cart:', cart);
+
+      if (!cart || cart.items.length === 0) {
+        throw new Error('El carrito esta vacio');
+      }
+
+      // Calcular peso y volumen total para shipping
+      let totalWeight = 0;
+      let totalVolume = 0;
+
+      for (const cartItem of cart.items) {
+        const product = await prisma.product.findUnique({
+          where: { id: cartItem.productId }
+        });
+
+        if (product) {
+          // Estimaciones de peso y volumen por contenedor
+          const estimatedWeightPerContainer = 1000; // kg
+          const estimatedVolumePerContainer = 50; // m³
+
+          totalWeight += estimatedWeightPerContainer * cartItem.containerQuantity;
+          totalVolume += estimatedVolumePerContainer * cartItem.containerQuantity;
+        }
+      }
+
+      // Generar numero de orden unico
+      const orderNumber = `ORD-${Date.now()}-${userIdNum}`;
+
+      // Crear orden basica primero
+      const basicOrderResult = await this.createOrder(cartId, userId, {
+        ...orderData,
+        requestShippingQuotes: true
+      });
+
+      // Si se requieren cotizaciones de shipping, generarlas
+      if (orderData.requestShippingQuotes) {
+        const shippingRequest: ShippingQuoteRequest = {
+          originPort: orderData.originPort || 'SHANGHAI',
+          destinationPort: orderData.destinationPort || 'MIAMI',
+          containerType: orderData.containerType || '20FT',
+          containerCount: cart.items.reduce((sum, item) => sum + item.containerQuantity, 0),
+          estimatedShippingDate: orderData.estimatedShippingDate || new Date(),
+          cargoValue: basicOrderResult.order.totalAmount,
+          incoterm: 'FOB'
+        };
+
+        // const shippingQuotes = await ShippingService.getShippingQuotes(shippingRequest, userIdNum);
+        const shippingQuotes: any[] = []; // Mock for now
         
         return {
-          ...order,
-          items: itemsWithProducts
+          order: basicOrderResult.order,
+          items: basicOrderResult.items,
+          shippingQuotes: shippingQuotes,
+          message: `Orden creada exitosamente. Se generaron ${shippingQuotes.length} cotizaciones de flete.`
         };
-      })
-    );
+      }
+
+      return basicOrderResult;
+
+    } catch (error: any) {
+      console.error('Error creating order with shipping:', error);
+      throw error;
+    }
   }
 
-  static async getOrderById(orderId: number, userId: string): Promise<Order | null> {
-    const userIdNum = parseInt(userId);
-    const order = mockOrders.find(o => o.id === orderId && o.userId === userIdNum);
-    
-    if (!order) {
-      return null;
+  /**
+   * Confirmar orden con cotización de shipping seleccionada
+   */
+  static async confirmOrderWithShipping(orderId: number, shippingQuoteId: number) {
+    try {
+      // Marcar la cotización como seleccionada
+      // await ShippingService.selectShippingQuote(shippingQuoteId, orderId);
+      console.log('ShippingService temporarily disabled'); // Mock for now
+
+      // Actualizar estado de la orden
+      const updatedOrder = await prisma.order.update({
+        where: { id: orderId },
+        data: { 
+          status: 'CONFIRMED',
+          updatedAt: new Date()
+        },
+        include: {
+          items: {
+            include: {
+              product: true
+            }
+          }
+        }
+      });
+
+      return {
+        order: updatedOrder,
+        message: 'Orden confirmada con shipping seleccionado'
+      };
+
+    } catch (error: any) {
+      console.error('Error confirming order with shipping:', error);
+      throw error;
     }
-
-    // Obtener items del pedido
-    const items = mockOrderItems.filter(item => item.orderId === orderId);
-    const itemsWithProducts = await Promise.all(
-      items.map(async (item) => {
-        const product = await ProductService.getProductById(item.productId);
-        return {
-          ...item,
-          product: product || undefined
-        };
-      })
-    );
-
-    return {
-      ...order,
-      items: itemsWithProducts
-    };
   }
 
-  static async updateOrderStatus(orderId: number, status: OrderStatus): Promise<Order> {
-    const order = mockOrders.find(o => o.id === orderId);
-    
-    if (!order) {
-      throw new Error('Pedido no encontrado');
+  /**
+   * Obtener órdenes de un usuario
+   */
+  static async getOrdersByUserId(userId: string | number) {
+    try {
+      const userIdNum = typeof userId === 'string' ? parseInt(userId) : userId;
+      
+      const orders = await prisma.order.findMany({
+        where: { userId: userIdNum },
+        include: {
+          items: {
+            include: {
+              product: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      return orders;
+    } catch (error: any) {
+      console.error('Error getting orders by user:', error);
+      throw error;
     }
+  }
 
-    order.status = status;
-    order.updatedAt = new Date();
+  /**
+   * Obtener orden por ID
+   */
+  static async getOrderById(orderId: number) {
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: {
+            include: {
+              product: true
+            }
+          }
+        }
+      });
 
-    return order;
+      if (!order) {
+        throw new Error('Orden no encontrada');
+      }
+
+      return {
+        id: order.id,
+        userId: order.userId,
+        status: order.status,
+        totalAmount: order.totalAmount,
+        shippingAddress: order.shippingAddress,
+        items: order.items.map((item: any) => ({
+          id: item.id,
+          containerQuantity: item.containerQuantity,
+          pricePerContainer: item.pricePerContainer,
+          totalPrice: item.totalPrice,
+          product: item.product
+        })),
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt
+      };
+    } catch (error: any) {
+      console.error('Error getting order by ID:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Actualizar estado de una orden
+   */
+  static async updateOrderStatus(orderId: number, status: OrderStatus) {
+    try {
+      const updatedOrder = await prisma.order.update({
+        where: { id: orderId },
+        data: { 
+          status,
+          updatedAt: new Date()
+        },
+        include: {
+          items: {
+            include: {
+              product: true
+            }
+          }
+        }
+      });
+
+      return updatedOrder;
+    } catch (error: any) {
+      console.error('Error updating order status:', error);
+      throw error;
+    }
   }
 }
+
+export default OrderService;

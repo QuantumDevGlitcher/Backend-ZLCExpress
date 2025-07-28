@@ -45,10 +45,10 @@ const database: DatabaseSchema = {
   notifications: [],
   products: [
     {
-      id: 'prod_1',
+      id: '1',
       name: 'Blusas de manga larga casuales',
       description: '4500 blusas algodón premium de manga larga, diseño casual elegante. Perfectas para distribuidores que buscan prendas versátiles y de calidad. Incluye variedad de tallas y colores populares.',
-      supplierId: 'supplier_1',
+      supplierId: '1',
       supplierName: 'Demo Compradora S.A.',
       containerType: '20GP',
       moq: 1,
@@ -59,10 +59,10 @@ const database: DatabaseSchema = {
       imageUrl: '/api/placeholder/400/300'
     },
     {
-      id: 'prod_2',
+      id: '2',
       name: 'Electrónicos Smart TV 55"',
       description: 'Smart TV LED 4K Ultra HD de 55 pulgadas con sistema Android TV integrado.',
-      supplierId: 'supplier_2',
+      supplierId: '2',
       supplierName: 'TechSupply Global Ltd.',
       containerType: '40GP',
       moq: 2,
@@ -72,10 +72,10 @@ const database: DatabaseSchema = {
       stockContainers: 15
     },
     {
-      id: 'prod_3',
+      id: '3',
       name: 'Equipos de Construcción',
       description: 'Herramientas y equipos para construcción de alta calidad.',
-      supplierId: 'supplier_3',
+      supplierId: '3',
       supplierName: 'BuildPro Industries',
       containerType: '40HC',
       moq: 1,
@@ -83,11 +83,63 @@ const database: DatabaseSchema = {
       currency: 'USD',
       category: 'Construcción',
       stockContainers: 8
+    },
+    {
+      id: '4',
+      name: 'Maquinaria Industrial',
+      description: 'Equipos de manufactura y maquinaria pesada para industria.',
+      supplierId: '4',
+      supplierName: 'Industrial Solutions Inc.',
+      containerType: '40HC',
+      moq: 1,
+      unitPrice: 120000,
+      currency: 'USD',
+      category: 'Maquinaria',
+      stockContainers: 5
+    },
+    {
+      id: '5',
+      name: 'Productos Químicos',
+      description: 'Químicos industriales y materias primas especializadas.',
+      supplierId: '5',
+      supplierName: 'ChemTrade Global',
+      containerType: '20GP',
+      moq: 2,
+      unitPrice: 65000,
+      currency: 'USD',
+      category: 'Químicos',
+      stockContainers: 12
+    },
+    {
+      id: '6',
+      name: 'Textiles Premium',
+      description: 'Telas y materiales textiles de alta calidad para manufactura.',
+      supplierId: '6',
+      supplierName: 'Textile Masters Ltd.',
+      containerType: '40GP',
+      moq: 1,
+      unitPrice: 35000,
+      currency: 'USD',
+      category: 'Textiles',
+      stockContainers: 20
+    },
+    {
+      id: '7',
+      name: 'Electrónicos Avanzados',
+      description: 'Componentes electrónicos y dispositivos tecnológicos avanzados.',
+      supplierId: '3',
+      supplierName: 'Shenzhen Electronics Ltd',
+      containerType: '40GP',
+      moq: 1,
+      unitPrice: 176700,
+      currency: 'USD',
+      category: 'Electrónicos',
+      stockContainers: 10
     }
   ],
   suppliers: [
     {
-      id: 'supplier_1',
+      id: '1',
       name: 'Demo Compradora S.A.',
       email: 'ventas@democompradora.com',
       phone: '+57 300 123 4567',
@@ -98,7 +150,7 @@ const database: DatabaseSchema = {
       averageResponseTime: 18
     },
     {
-      id: 'supplier_2',
+      id: '2',
       name: 'TechSupply Global Ltd.',
       email: 'rfq@techsupply.com',
       phone: '+86 138 0013 8000',
@@ -109,15 +161,48 @@ const database: DatabaseSchema = {
       averageResponseTime: 24
     },
     {
-      id: 'supplier_3',
-      name: 'BuildPro Industries',
-      email: 'quotes@buildpro.com',
-      phone: '+1 555 987 6543',
+      id: '3',
+      name: 'Shenzhen Electronics Ltd',
+      email: 'quotes@shenzhen-electronics.com',
+      phone: '+86 755 1234 5678',
+      country: 'China',
+      verified: true,
+      rating: 4.7,
+      totalRFQs: 312,
+      averageResponseTime: 16
+    },
+    {
+      id: '4',
+      name: 'Industrial Solutions Inc.',
+      email: 'sales@industrial-solutions.com',
+      phone: '+1 555 123 4567',
       country: 'USA',
       verified: true,
+      rating: 4.8,
+      totalRFQs: 145,
+      averageResponseTime: 20
+    },
+    {
+      id: '5',
+      name: 'ChemTrade Global',
+      email: 'rfq@chemtrade.com',
+      phone: '+49 30 1234 5678',
+      country: 'Germany',
+      verified: true,
       rating: 4.9,
-      totalRFQs: 89,
-      averageResponseTime: 12
+      totalRFQs: 98,
+      averageResponseTime: 14
+    },
+    {
+      id: '6',
+      name: 'Textile Masters Ltd.',
+      email: 'quotes@textile-masters.com',
+      phone: '+91 22 1234 5678',
+      country: 'India',
+      verified: true,
+      rating: 4.6,
+      totalRFQs: 267,
+      averageResponseTime: 22
     }
   ]
 };
@@ -138,11 +223,14 @@ export class DatabaseService {
   /**
    * Obtener información de producto por ID
    */
-  static async getProductById(productId: string): Promise<ProductInfo | null> {
-    console.log('🔍 DatabaseService: Buscando producto con ID:', productId);
+  static async getProductById(productId: string | number): Promise<ProductInfo | null> {
+    // Convertir a string para manejar tanto IDs numéricos como de texto
+    const searchId = String(productId);
+    
+    console.log('🔍 DatabaseService: Buscando producto con ID:', searchId, '(original:', productId, ')');
     console.log('🗄️ DatabaseService: Productos disponibles:', database.products.map(p => ({ id: p.id, name: p.name })));
     
-    const product = database.products.find(product => product.id === productId) || null;
+    const product = database.products.find(product => product.id === searchId) || null;
     console.log('📦 DatabaseService: Producto encontrado:', product);
     
     return product;
@@ -151,8 +239,17 @@ export class DatabaseService {
   /**
    * Obtener información de proveedor por ID
    */
-  static async getSupplierById(supplierId: string): Promise<SupplierInfo | null> {
-    return database.suppliers.find(supplier => supplier.id === supplierId) || null;
+  static async getSupplierById(supplierId: string | number): Promise<SupplierInfo | null> {
+    // Convertir a string para manejar tanto IDs numéricos como de texto
+    const searchId = String(supplierId);
+    
+    console.log('🔍 DatabaseService: Buscando proveedor con ID:', searchId, '(original:', supplierId, ')');
+    console.log('🗄️ DatabaseService: Proveedores disponibles:', database.suppliers.map(s => ({ id: s.id, name: s.name })));
+    
+    const supplier = database.suppliers.find(supplier => supplier.id === searchId) || null;
+    console.log('🏭 DatabaseService: Proveedor encontrado:', supplier);
+    
+    return supplier;
   }
 
   /**

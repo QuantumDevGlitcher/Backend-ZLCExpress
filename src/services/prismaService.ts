@@ -360,7 +360,7 @@ export class DatabaseService {
     ipAddress: string | null;
     userAgent: string | null;
   }): Promise<UserSession> {
-    const tokenHash = await bcrypt.hash(data.token, 10);
+    const tokenHash = data.token; // No hashear el token JWT, guardarlo directamente
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 días
 
     return await this.prisma.userSession.create({

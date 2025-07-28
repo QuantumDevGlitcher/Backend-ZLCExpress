@@ -1,228 +1,303 @@
-import { DatabaseService, ProductInfo } from './databaseService';
-import { ProductService } from './productService';
+// ================================================================
+// CART SERVICE - SERVICIO COMPLETAMENTE INDIVIDUALIZADO
+// ================================================================
+// Descripción: Servicio que garantiza separación total de datos por usuario
+// Sistema tipo Amazon: Cada usuario solo ve su propio carrito
 
-// Tipos para el carrito
-export interface CartItem {
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+export interface CartItemData {
+  userId: number;
+  productId: number;
+  containerType: string;
+  containerQuantity: number;
+  pricePerContainer: number;
+  incoterm: string;
+  customPrice?: number;
+  notes?: string;
+}
+
+export interface CartItemWithDetails {
   id: string;
-  userId: string;
-  productId: string;
-  productName: string;
-  productDescription: string;
-  supplierName: string;
-  supplierId: string;
+  userId: number;
+  productId: number;
   containerType: string;
   containerQuantity: number;
   pricePerContainer: number;
   currency: string;
   incoterm: string;
-  customPrice?: number;
-  notes?: string;
-  addedAt: Date;
+  customPrice?: number | null;
+  notes?: string | null;
+  createdAt: Date;
   updatedAt: Date;
+  product: {
+    id: number;
+    title: string;
+    price: number;
+    currency: string;
+    images: string[];
+    supplier: {
+      id: number;
+      companyName: string;
+    };
+  };
 }
 
-export interface Cart {
-  userId: string;
-  items: CartItem[];
-  itemCount: number;
-  totalAmount: number;
-  currency: string;
-  lastUpdated: Date;
+// Función auxiliar para convertir Decimal a number
+function convertCartItemForResponse(cartItem: any): CartItemWithDetails {
+  return {
+    ...cartItem,
+    pricePerContainer: typeof cartItem.pricePerContainer === 'object' ? parseFloat(cartItem.pricePerContainer.toString()) : cartItem.pricePerContainer,
+    customPrice: cartItem.customPrice ? (typeof cartItem.customPrice === 'object' ? parseFloat(cartItem.customPrice.toString()) : cartItem.customPrice) : null,
+    product: {
+      ...cartItem.product,
+      price: typeof cartItem.product.price === 'object' ? parseFloat(cartItem.product.price.toString()) : cartItem.product.price
+    }
+  };
 }
-
-// Mock database para carrito
-const cartDatabase: { [userId: string]: CartItem[] } = {};
 
 export class CartService {
-  
   /**
-   * Obtener carrito completo del usuario
+   * 🛒 Obtener items del carrito del usuario
    */
-  static async getCart(userId: string): Promise<Cart> {
-    const userCartItems = cartDatabase[userId] || [];
-    
-    // Calcular totales
-    const itemCount = userCartItems.reduce((sum, item) => sum + item.containerQuantity, 0);
-    const totalAmount = userCartItems.reduce((sum, item) => {
-      const price = item.customPrice || item.pricePerContainer;
-      return sum + (price * item.containerQuantity);
-    }, 0);
+  static async getUserCartItems(userId: number): Promise<CartItemWithDetails[]> {
+    try {
+      console.log(`🛒 CartService: Obteniendo carrito para usuario ${userId}`);
 
-    return {
-      userId,
-      items: userCartItems,
-      itemCount,
-      totalAmount,
-      currency: userCartItems.length > 0 ? userCartItems[0].currency : 'USD',
-      lastUpdated: new Date()
-    };
+      const cartItems = await prisma.cartItem.findMany({
+        where: { userId: userId }, // ✅ FILTRO CRÍTICO
+        include: {
+          product: {
+            include: {
+              supplier: {
+                select: {
+                  id: true,
+                  companyName: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      console.log(`✅ CartService: ${cartItems.length} items obtenidos para usuario ${userId}`);
+      return cartItems.map(item => convertCartItemForResponse(item));
+
+    } catch (error) {
+      console.error('❌ CartService: Error obteniendo carrito:', error);
+      throw error;
+    }
   }
 
   /**
-   * Agregar producto al carrito
+   * ➕ Agregar al carrito
    */
-  static async addToCart(
-    userId: string, 
-    productId: string, 
-    containerQuantity: number,
-    containerType: string = '20GP',
-    incoterm: string = 'CIF',
-    customPrice?: number,
-    notes?: string
-  ): Promise<CartItem> {
-    
-    console.log('🛒 CartService.addToCart called with:', { userId, productId, containerQuantity, containerType, incoterm });
-    
-    // Obtener información del producto
-    const product = await ProductService.getProductById(productId);
-    console.log('📦 Product found:', product ? 'YES' : 'NO', product?.id);
-    
-    if (!product) {
-      throw new Error('Producto no encontrado');
-    }
+  static async addToCart(cartData: CartItemData): Promise<CartItemWithDetails> {
+    try {
+      console.log(`➕ CartService: Agregando producto ${cartData.productId} al carrito del usuario ${cartData.userId}`);
 
-    // Verificar stock
-    if (product.stockContainers < containerQuantity) {
-      throw new Error(`Stock insuficiente. Disponible: ${product.stockContainers} contenedores`);
-    }
+      // Verificar si el producto ya está en el carrito
+      const existingItem = await prisma.cartItem.findFirst({
+        where: {
+          userId: cartData.userId,
+          productId: cartData.productId,
+          containerType: cartData.containerType,
+          incoterm: cartData.incoterm
+        }
+      });
 
-    // Inicializar carrito del usuario si no existe
-    if (!cartDatabase[userId]) {
-      cartDatabase[userId] = [];
-    }
+      let cartItem;
 
-    // Verificar si el producto ya está en el carrito
-    const existingItemIndex = cartDatabase[userId].findIndex(
-      item => item.productId === productId && 
-               item.supplierId === product.supplierId &&
-               item.containerType === containerType &&
-               item.incoterm === incoterm
-    );
-
-    if (existingItemIndex >= 0) {
-      // Actualizar cantidad del item existente
-      const existingItem = cartDatabase[userId][existingItemIndex];
-      existingItem.containerQuantity += containerQuantity;
-      existingItem.updatedAt = new Date();
-      
-      if (customPrice) {
-        existingItem.customPrice = customPrice;
+      if (existingItem) {
+        // Actualizar cantidad si ya existe
+        cartItem = await prisma.cartItem.update({
+          where: { id: existingItem.id },
+          data: {
+            containerQuantity: existingItem.containerQuantity + cartData.containerQuantity,
+            updatedAt: new Date()
+          },
+          include: {
+            product: {
+              include: {
+                supplier: {
+                  select: {
+                    id: true,
+                    companyName: true
+                  }
+                }
+              }
+            }
+          }
+        });
+      } else {
+        // Crear nuevo item
+        cartItem = await prisma.cartItem.create({
+          data: {
+            userId: cartData.userId, // ✅ ASIGNACIÓN CRÍTICA
+            productId: cartData.productId,
+            containerType: cartData.containerType,
+            containerQuantity: cartData.containerQuantity,
+            pricePerContainer: cartData.pricePerContainer,
+            incoterm: cartData.incoterm,
+            customPrice: cartData.customPrice,
+            notes: cartData.notes
+          },
+          include: {
+            product: {
+              include: {
+                supplier: {
+                  select: {
+                    id: true,
+                    companyName: true
+                  }
+                }
+              }
+            }
+          }
+        });
       }
-      if (notes) {
-        existingItem.notes = notes;
+
+      console.log(`✅ CartService: Producto agregado al carrito del usuario ${cartData.userId}`);
+      return convertCartItemForResponse(cartItem);
+
+    } catch (error) {
+      console.error('❌ CartService: Error agregando al carrito:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 🔄 Actualizar item del carrito (solo si pertenece al usuario)
+   */
+  static async updateCartItem(cartItemId: string, userId: number, updateData: Partial<CartItemData>): Promise<CartItemWithDetails> {
+    try {
+      console.log(`🔄 CartService: Actualizando item ${cartItemId} del carrito del usuario ${userId}`);
+
+      // Verificar que el item pertenece al usuario
+      const existingItem = await prisma.cartItem.findFirst({
+        where: {
+          id: cartItemId,
+          userId: userId // ✅ VALIDACIÓN CRÍTICA
+        }
+      });
+
+      if (!existingItem) {
+        throw new Error('Item del carrito no encontrado o no pertenece al usuario');
       }
-      
-      return existingItem;
+
+      const cartItem = await prisma.cartItem.update({
+        where: { id: cartItemId },
+        data: {
+          ...updateData,
+          updatedAt: new Date()
+        },
+        include: {
+          product: {
+            include: {
+              supplier: {
+                select: {
+                  id: true,
+                  companyName: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      console.log(`✅ CartService: Item del carrito actualizado`);
+      return convertCartItemForResponse(cartItem);
+
+    } catch (error) {
+      console.error('❌ CartService: Error actualizando item del carrito:', error);
+      throw error;
     }
-
-    // Crear nuevo item del carrito
-    const newCartItem: CartItem = {
-      id: `cart_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      userId,
-      productId: product.id,
-      productName: product.name,
-      productDescription: product.description,
-      supplierName: product.supplierName,
-      supplierId: product.supplierId,
-      containerType,
-      containerQuantity,
-      pricePerContainer: product.pricePerContainer,
-      currency: product.currency,
-      incoterm,
-      customPrice,
-      notes,
-      addedAt: new Date(),
-      updatedAt: new Date()
-    };
-
-    cartDatabase[userId].push(newCartItem);
-    return newCartItem;
   }
 
   /**
-   * Actualizar cantidad de un item del carrito
+   * 🗑️ Eliminar item del carrito (solo si pertenece al usuario)
    */
-  static async updateCartItem(
-    userId: string, 
-    itemId: string, 
-    containerQuantity: number,
-    customPrice?: number,
-    notes?: string
-  ): Promise<CartItem> {
-    
-    if (!cartDatabase[userId]) {
-      throw new Error('Carrito no encontrado');
-    }
+  static async removeFromCart(cartItemId: string, userId: number): Promise<boolean> {
+    try {
+      console.log(`🗑️ CartService: Eliminando item ${cartItemId} del carrito del usuario ${userId}`);
 
-    const itemIndex = cartDatabase[userId].findIndex(item => item.id === itemId);
-    if (itemIndex === -1) {
-      throw new Error('Item no encontrado en el carrito');
-    }
+      // Verificar que el item pertenece al usuario
+      const existingItem = await prisma.cartItem.findFirst({
+        where: {
+          id: cartItemId,
+          userId: userId // ✅ VALIDACIÓN CRÍTICA
+        }
+      });
 
-    const item = cartDatabase[userId][itemIndex];
-    
-    // Verificar stock
-    const product = await DatabaseService.getProductById(item.productId);
-    if (product && product.stockContainers < containerQuantity) {
-      throw new Error(`Stock insuficiente. Disponible: ${product.stockContainers} contenedores`);
-    }
+      if (!existingItem) {
+        throw new Error('Item del carrito no encontrado o no pertenece al usuario');
+      }
 
-    // Actualizar item
-    item.containerQuantity = containerQuantity;
-    item.updatedAt = new Date();
-    
-    if (customPrice !== undefined) {
-      item.customPrice = customPrice;
-    }
-    if (notes !== undefined) {
-      item.notes = notes;
-    }
+      await prisma.cartItem.delete({
+        where: { id: cartItemId }
+      });
 
-    return item;
-  }
-
-  /**
-   * Remover item del carrito
-   */
-  static async removeFromCart(userId: string, itemId: string): Promise<boolean> {
-    if (!cartDatabase[userId]) {
-      return false;
-    }
-
-    const initialLength = cartDatabase[userId].length;
-    cartDatabase[userId] = cartDatabase[userId].filter(item => item.id !== itemId);
-    
-    return cartDatabase[userId].length < initialLength;
-  }
-
-  /**
-   * Limpiar carrito completo
-   */
-  static async clearCart(userId: string): Promise<boolean> {
-    if (cartDatabase[userId]) {
-      cartDatabase[userId] = [];
+      console.log(`✅ CartService: Item eliminado del carrito del usuario ${userId}`);
       return true;
+
+    } catch (error) {
+      console.error('❌ CartService: Error eliminando item del carrito:', error);
+      throw error;
     }
-    return false;
   }
 
   /**
-   * Obtener estadísticas del carrito
+   * 🧹 Limpiar carrito del usuario
    */
-  static async getCartStats(userId: string): Promise<{
-    itemCount: number;
-    totalAmount: number;
-    currency: string;
-    supplierCount: number;
+  static async clearUserCart(userId: number): Promise<number> {
+    try {
+      console.log(`🧹 CartService: Limpiando carrito del usuario ${userId}`);
+
+      const result = await prisma.cartItem.deleteMany({
+        where: { userId: userId } // ✅ FILTRO CRÍTICO
+      });
+
+      console.log(`✅ CartService: ${result.count} items eliminados del carrito del usuario ${userId}`);
+      return result.count;
+
+    } catch (error) {
+      console.error('❌ CartService: Error limpiando carrito:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 📊 Obtener estadísticas del carrito del usuario
+   */
+  static async getUserCartStats(userId: number): Promise<{
+    totalItems: number;
+    totalContainers: number;
+    estimatedTotal: number;
   }> {
-    const cart = await this.getCart(userId);
-    const uniqueSuppliers = new Set(cart.items.map(item => item.supplierId));
-    
-    return {
-      itemCount: cart.itemCount,
-      totalAmount: cart.totalAmount,
-      currency: cart.currency,
-      supplierCount: uniqueSuppliers.size
-    };
+    try {
+      console.log(`📊 CartService: Obteniendo estadísticas del carrito para usuario ${userId}`);
+
+      const cartItems = await this.getUserCartItems(userId);
+
+      const totalItems = cartItems.length;
+      const totalContainers = cartItems.reduce((sum, item) => sum + item.containerQuantity, 0);
+      const estimatedTotal = cartItems.reduce((sum, item) => 
+        sum + (item.customPrice || item.pricePerContainer) * item.containerQuantity, 0
+      );
+
+      const stats = { totalItems, totalContainers, estimatedTotal };
+      console.log(`✅ CartService: Estadísticas del carrito obtenidas:`, stats);
+      
+      return stats;
+
+    } catch (error) {
+      console.error('❌ CartService: Error obteniendo estadísticas del carrito:', error);
+      throw error;
+    }
   }
 }
+
+export default CartService;

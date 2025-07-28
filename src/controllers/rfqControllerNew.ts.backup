@@ -1,0 +1,513 @@
+import { Request, Response } from 'express';
+import { QuoteService, CreateQuoteData } from '../services/quoteService';
+import { CartService } from '../services/cartService';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+interface RFQCreateRequest {
+  productId: string | number;
+  productName: string;
+  requesterName: string;
+  requesterEmail: string;
+  comp      console.log('👤 [sendCartQuote] Using userId:', userId);
+      console.log('📦 [sendCartQuote] Items recibidos del frontend:', items?.length || 0);
+      
+      // Verificar que tengamos items (ya sea del frontend o del carrito)
+      let cartItems = items;
+      
+      if (!cartItems || cartItems.length === 0) {
+        // Fallback: obtener del carrito en base de datos
+        console.log('🔍 [sendCartQuote] No hay items en request, obteniendo del carrito...');
+        
+        if (!CartService) {
+          throw new Error('CartService no está disponible');
+        }
+        
+        const cart = await CartService.getCart(userId);
+        cartItems = cart.items;
+        
+        if (!cartItems || cartItems.length === 0) {
+          console.log('⚠️ [sendCartQuote] Carrito vacío');
+          res.status(400).json({
+            success: false,
+            message: 'El carrito está vacío y no se enviaron items'
+          });
+          return;
+        }
+      }
+
+      console.log(`🛒 [sendCartQuote] Procesando ${cartItems.length} items`);
+      console.log('📦 [sendCartQuote] Items details:', JSON.stringify(cartItems, null, 2));ing;
+  containerQuantity: number;
+  containerType: '20GP' | '40GP' | '40HQ' | '45HQ';
+  incoterm: 'EXW' | 'FOB' | 'CIF' | 'DDP';
+  tentativeDeliveryDate: string;
+  logisticsComments: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  estimatedValue: number;
+  currency: string;
+  items?: any[];
+  freightQuoteId?: number;
+  paymentConditions?: string;
+  freightCost?: number;
+  platformCommission?: number;
+  totalAmount?: number;
+  grandTotal?: number;
+}
+
+export class RFQController {
+  
+  /**
+   * Debug endpoint para ver qué datos llegan
+   */
+  static async debugRFQ(req: Request, res: Response): Promise<void> {
+    console.log('🐛 DEBUG RFQ - Method:', req.method);
+    console.log('🐛 DEBUG RFQ - Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('🐛 DEBUG RFQ - Body:', JSON.stringify(req.body, null, 2));
+    console.log('🐛 DEBUG RFQ - Query:', JSON.stringify(req.query, null, 2));
+    console.log('🐛 DEBUG RFQ - Params:', JSON.stringify(req.params, null, 2));
+    
+    res.json({
+      success: true,
+      message: 'Debug info logged',
+      received: {
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        query: req.query,
+        params: req.params
+      }
+    });
+  }
+
+  /**
+   * Llenar carrito con datos de prueba (temporal para testing)
+   */
+  static async fillTestCart(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('🧪 [fillTestCart] Llenando carrito con datos de prueba...');
+      
+      const userIdHeader = req.headers['user-id'];
+      const userId = userIdHeader ? parseInt(userIdHeader as string) : 1;
+      
+      // Limpiar carrito existente
+      await CartService.clearCart(userId);
+      
+      // 1. Primero verificar/crear productos de prueba
+      const testProducts = [];
+      
+      // Crear categoría de prueba
+      let category = await prisma.category.findUnique({ where: { id: 1 } });
+      if (!category) {
+        category = await prisma.category.create({
+          data: {
+            name: 'Productos de Prueba',
+            description: 'Categoría para productos de testing',
+            slug: 'productos-prueba',
+            isActive: true
+          }
+        });
+      }
+      
+      // Crear producto 1
+      let product1 = await prisma.product.findUnique({ where: { id: 1 } });
+      if (!product1) {
+        // Primero crear supplier
+        let supplier = await prisma.user.findFirst({ where: { userType: 'SUPPLIER' } });
+        if (!supplier) {
+          supplier = await prisma.user.create({
+            data: {
+              email: 'supplier1@zlcexpress.com',
+              password: 'temp_password',
+              companyName: 'Proveedor ZLC Express',
+              taxId: 'SUP001',
+              operationCountry: 'Panama',
+              industry: 'Manufacturing',
+              contactName: 'Proveedor Principal',
+              contactPosition: 'Gerente de Ventas',
+              contactPhone: '+507-8765-4321',
+              fiscalAddress: 'Zona Libre de Colón, Panamá',
+              country: 'Panama',
+              state: 'Colón',
+              city: 'Colón',
+              postalCode: '12345',
+              userType: 'SUPPLIER'
+            }
+          });
+        }
+        
+        product1 = await prisma.product.create({
+          data: {
+            title: 'Producto Prueba 1',
+            description: 'Descripción del producto de prueba 1',
+            supplierId: supplier.id,
+            categoryId: category.id,
+            price: 1500,
+            minQuantity: 1,
+            unit: 'contenedor',
+            incoterm: 'FOB',
+            originCountry: 'Panama',
+            images: [],
+            moq: 1,
+            unitsPerContainer: 1000,
+            pricePerContainer: 1500,
+            stockContainers: 100,
+            isActive: true
+          }
+        });
+      }
+      testProducts.push(product1);
+      
+      // Crear producto 2
+      let product2 = await prisma.product.findUnique({ where: { id: 2 } });
+      if (!product2) {
+        const supplier = await prisma.user.findFirst({ where: { userType: 'SUPPLIER' } });
+        product2 = await prisma.product.create({
+          data: {
+            title: 'Producto Prueba 2',
+            description: 'Descripción del producto de prueba 2',
+            supplierId: supplier!.id,
+            categoryId: category.id,
+            price: 2800,
+            minQuantity: 1,
+            unit: 'contenedor',
+            incoterm: 'CIF',
+            originCountry: 'Panama',
+            images: [],
+            moq: 1,
+            unitsPerContainer: 500,
+            pricePerContainer: 2800,
+            stockContainers: 100,
+            isActive: true
+          }
+        });
+      }
+      testProducts.push(product2);
+
+      // 2. Agregar productos al carrito
+      const testItems = [
+        {
+          productId: product1.id,
+          containerQuantity: 2,
+          containerType: '20GP',
+          incoterm: 'FOB',
+          customPrice: 1500,
+          notes: 'Producto de prueba 1'
+        },
+        {
+          productId: product2.id,
+          containerQuantity: 1,
+          containerType: '40GP',
+          incoterm: 'CIF',
+          customPrice: 2800,
+          notes: 'Producto de prueba 2'
+        }
+      ];
+
+      for (const item of testItems) {
+        await CartService.addToCart(
+          userId, 
+          item.productId, 
+          item.containerQuantity,
+          item.containerType,
+          item.incoterm,
+          item.customPrice,
+          item.notes
+        );
+      }
+
+      const cart = await CartService.getCart(userId);
+      
+      console.log('✅ [fillTestCart] Carrito llenado exitosamente');
+
+      res.json({
+        success: true,
+        message: 'Carrito llenado con datos de prueba',
+        data: {
+          itemsAdded: testItems.length,
+          productsCreated: testProducts.length,
+          cart: cart
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ [fillTestCart] Error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error llenando carrito de prueba',
+        error: (error as any).message,
+        stack: process.env.NODE_ENV === 'development' ? (error as any).stack : undefined
+      });
+    }
+  }
+
+  /**
+   * Crear nueva solicitud de cotización (guardada en PostgreSQL)
+   * POST /api/rfq
+   */
+  static async createRFQ(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('🔍 RFQ Request Body:', JSON.stringify(req.body, null, 2));
+      
+      const rfqData: RFQCreateRequest = req.body;
+
+      // Validaciones básicas
+      if (!rfqData.productId) {
+        console.log('❌ Validación fallida: productId requerido');
+        res.status(400).json({
+          success: false,
+          message: 'El ID del producto es requerido',
+          error: 'PRODUCT_ID_REQUIRED',
+          receivedData: rfqData
+        });
+        return;
+      }
+
+      console.log('🔧 Procesando RFQ...');
+      
+      // Hardcoded user data para testing (en producción esto vendría del token JWT)
+      const buyerId = 1; // Usuario comprador predeterminado
+      const supplierId = 1; // Supplier predeterminado para testing
+      
+      // Preparar datos para la cotización en PostgreSQL
+      const quoteData: CreateQuoteData = {
+        totalAmount: rfqData.totalAmount || rfqData.estimatedValue || 0,
+        freightEstimate: rfqData.freightCost || 0,
+        freightQuote: rfqData.freightQuoteId || 'standard',
+        platformCommission: rfqData.platformCommission || 0,
+        notes: rfqData.logisticsComments
+      };
+
+      console.log('💾 Guardando cotización en PostgreSQL...');
+      
+      // Crear la cotización en la base de datos
+      const newQuote = await QuoteService.createQuote(buyerId, quoteData);
+
+      console.log('✅ Cotización creada exitosamente:', newQuote.id);
+
+      res.status(201).json({
+        success: true,
+        message: 'RFQ creada y guardada exitosamente',
+        data: {
+          id: newQuote.id,
+          quoteNumber: newQuote.quoteNumber || `Q-${newQuote.id}`,
+          status: 'pending',
+          totalAmount: quoteData.totalAmount,
+          createdAt: new Date()
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error creando RFQ:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor al crear RFQ',
+        error: (error as any).message,
+        stack: process.env.NODE_ENV === 'development' ? (error as any).stack : undefined
+      });
+    }
+  }
+
+  /**
+   * Obtener RFQ por ID
+   * GET /api/rfq/:id
+   */
+  static async getRFQ(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      
+      console.log('🔍 Buscando cotización con ID:', id);
+      
+      // Buscar la cotización por su ID numérico
+      const quotes = await QuoteService.getUserQuotes(1); // Usuario hardcoded para testing
+      
+      const quote = quotes.find((q: any) => q.id.toString() === id);
+      
+      if (!quote) {
+        res.status(404).json({
+          success: false,
+          message: 'Cotización no encontrada',
+          error: 'QUOTE_NOT_FOUND'
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        data: quote
+      });
+
+    } catch (error) {
+      console.error('❌ Error obteniendo RFQ:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: (error as any).message
+      });
+    }
+  }
+
+  /**
+   * Obtener todas las cotizaciones del usuario
+   * GET /api/my-quotes
+   */
+  static async getMyQuotes(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('📋 Obteniendo cotizaciones del usuario...');
+      
+      // En producción esto vendría del token JWT
+      const userId = 1;
+      
+      const quotes = await QuoteService.getUserQuotes(userId);
+      const stats = await QuoteService.getQuoteStats(userId);
+      
+      console.log(`✅ Encontradas ${quotes.length} cotizaciones`);
+
+      res.json({
+        success: true,
+        data: quotes,
+        stats: stats,
+        total: quotes.length
+      });
+
+    } catch (error) {
+      console.error('❌ Error obteniendo cotizaciones:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: (error as any).message
+      });
+    }
+  }
+
+  /**
+   * Obtener estadísticas de cotizaciones
+   * GET /api/quotes/stats
+   */
+  static async getQuoteStats(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('📊 Obteniendo estadísticas de cotizaciones...');
+      
+      // En producción esto vendría del token JWT
+      const userId = 1;
+      
+      const stats = await QuoteService.getQuoteStats(userId);
+      
+      console.log('✅ Estadísticas obtenidas:', stats);
+
+      res.json({
+        success: true,
+        data: stats
+      });
+
+    } catch (error) {
+      console.error('❌ Error obteniendo estadísticas:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: (error as any).message
+      });
+    }
+  }
+
+  /**
+   * Enviar cotización desde el carrito
+   * POST /api/rfq/cart/quote
+   */
+  static async sendCartQuote(req: Request, res: Response): Promise<void> {
+    try {
+      console.log('🛒 [sendCartQuote] Iniciando proceso...');
+      console.log('📦 [sendCartQuote] Headers:', JSON.stringify(req.headers, null, 2));
+      console.log('📦 [sendCartQuote] Body data:', JSON.stringify(req.body, null, 2));
+      
+      const {
+        items,
+        totalAmount,
+        paymentConditions,
+        freightEstimate,
+        freightQuote,
+        platformCommission,
+        notes
+      } = req.body;
+
+      // Obtener userId del header
+      const userIdHeader = req.headers['user-id'];
+      const userId = userIdHeader ? parseInt(userIdHeader as string) : 1;
+      
+      console.log('👤 [sendCartQuote] Using userId:', userId);
+      
+      // Verificar si CartService está disponible
+      console.log('🔍 [sendCartQuote] Verificando CartService...');
+      if (!CartService) {
+        throw new Error('CartService no está disponible');
+      }
+      
+      // Obtener items del carrito
+      console.log('� [sendCartQuote] Obteniendo carrito...');
+      const cart = await CartService.getCart(userId);
+      console.log('📦 [sendCartQuote] Cart result:', JSON.stringify(cart, null, 2));
+      
+      if (!cart.items || cart.items.length === 0) {
+        console.log('⚠️ [sendCartQuote] Carrito vacío');
+        res.status(400).json({
+          success: false,
+          message: 'El carrito está vacío'
+        });
+        return;
+      }
+
+      console.log(`🛒 [sendCartQuote] Procesando ${cart.items.length} items del carrito`);
+
+      // Por simplicidad, crear una sola cotización con todos los items
+      const quoteData = {
+        totalAmount: totalAmount || cart.totalAmount,
+        freightEstimate: freightEstimate || 0,
+        freightQuote: freightQuote || 'standard',
+        platformCommission: platformCommission || 0,
+        notes: notes || `Cotización de ${cart.items.length} productos del carrito`
+      };
+
+      console.log('💾 [sendCartQuote] Creando cotización con datos:', JSON.stringify(quoteData, null, 2));
+      
+      // Verificar QuoteService
+      if (!QuoteService) {
+        throw new Error('QuoteService no está disponible');
+      }
+      
+      const quote = await QuoteService.createQuote(userId, quoteData);
+      console.log('✅ [sendCartQuote] Cotización creada:', quote.id);
+
+      // Limpiar el carrito después de enviar la cotización
+      console.log('🧹 [sendCartQuote] Limpiando carrito...');
+      await CartService.clearCart(userId);
+      console.log('✅ [sendCartQuote] Carrito limpiado');
+
+      console.log('🎉 [sendCartQuote] Proceso completado exitosamente');
+
+      res.status(201).json({
+        success: true,
+        message: 'Cotización enviada exitosamente',
+        data: {
+          quote: {
+            id: quote.id,
+            quoteNumber: quote.quoteNumber || `Q-${quote.id}`,
+            status: quote.status || 'pending'
+          },
+          cartItemsProcessed: cart.items.length
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ [sendCartQuote] Error completo:', error);
+      console.error('❌ [sendCartQuote] Stack trace:', (error as any).stack);
+      
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor',
+        error: (error as any).message,
+        details: process.env.NODE_ENV === 'development' ? (error as any).stack : undefined
+      });
+    }
+  }
+}

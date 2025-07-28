@@ -10,108 +10,295 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrderService = void 0;
-const types_1 = require("../types");
+const client_1 = require("@prisma/client");
 const cartService_1 = require("./cartService");
-const productService_1 = require("./productService");
-// Mock database
-const mockOrders = [];
-const mockOrderItems = [];
-let nextOrderId = 1;
-let nextOrderItemId = 1;
+const prisma = new client_1.PrismaClient();
 class OrderService {
-    static createOrder(userId, orderData) {
-        return __awaiter(this, void 0, void 0, function* () {
-            // Obtener carrito del usuario
-            const cart = yield cartService_1.CartService.getCart(userId);
-            if (cart.items.length === 0) {
-                throw new Error('El carrito está vacío');
-            }
-            // Verificar stock de todos los productos
-            for (const item of cart.items) {
-                const product = yield productService_1.ProductService.getProductById(item.productId);
-                if (!product || product.stockContainers < item.containerQuantity) {
-                    throw new Error(`Stock insuficiente para el producto: ${(product === null || product === void 0 ? void 0 : product.name) || 'Desconocido'}`);
+    /**
+     * Crear orden desde el carrito (sin shipping)
+     */
+    static createOrder(cartId_1, userId_1) {
+        return __awaiter(this, arguments, void 0, function* (cartId, userId, orderData = {}) {
+            try {
+                const userIdNum = typeof userId === 'string' ? parseInt(userId) : userId;
+                console.log('Creating order for user:', userIdNum);
+                console.log('Order data:', orderData);
+                // Obtener carrito del usuario
+                const cart = yield cartService_1.CartService.getCart(userIdNum);
+                console.log('User cart:', cart);
+                if (!cart || cart.items.length === 0) {
+                    throw new Error('El carrito esta vacio');
                 }
-            }
-            // Crear el pedido
-            const newOrder = {
-                id: nextOrderId++,
-                userId: parseInt(userId),
-                status: types_1.OrderStatus.PENDING,
-                total: cart.totalAmount,
-                shippingAddress: orderData.shippingAddress,
-                paymentMethod: orderData.paymentMethod,
-                items: [],
-                createdAt: new Date(),
-                updatedAt: new Date()
-            };
-            // Crear los items del pedido
-            const orderItems = [];
-            for (const cartItem of cart.items) {
-                const product = yield productService_1.ProductService.getProductById(cartItem.productId);
-                if (product) {
-                    const orderItem = {
-                        id: nextOrderItemId++,
-                        orderId: newOrder.id,
+                // Calcular items y total
+                const orderItems = [];
+                let totalAmount = 0;
+                for (const cartItem of cart.items) {
+                    // Obtener informacion actualizada del producto
+                    const product = yield prisma.product.findUnique({
+                        where: { id: cartItem.productId },
+                        include: { category: true }
+                    });
+                    if (!product) {
+                        throw new Error(`Producto ${cartItem.productId} no encontrado`);
+                    }
+                    console.log(`Checking stock for product ${cartItem.productId}, needed: ${cartItem.containerQuantity}, available: ${product.stockContainers}`);
+                    if (product.stockContainers < cartItem.containerQuantity) {
+                        throw new Error(`Stock insuficiente para ${product.name}. Disponible: ${product.stockContainers}, Solicitado: ${cartItem.containerQuantity}`);
+                    }
+                    const itemTotal = product.pricePerContainer * cartItem.containerQuantity;
+                    totalAmount += itemTotal;
+                    orderItems.push({
                         productId: cartItem.productId,
-                        product,
-                        quantity: cartItem.containerQuantity,
-                        price: product.pricePerContainer
-                    };
-                    orderItems.push(orderItem);
-                    mockOrderItems.push(orderItem);
-                    // Actualizar stock
-                    yield productService_1.ProductService.updateStock(cartItem.productId, cartItem.containerQuantity);
+                        containerQuantity: cartItem.containerQuantity,
+                        pricePerContainer: product.pricePerContainer,
+                        totalPrice: itemTotal
+                    });
                 }
+                console.log('Total amount:', totalAmount);
+                // Crear orden en base de datos
+                const newOrder = yield prisma.order.create({
+                    data: {
+                        userId: userIdNum,
+                        status: 'PENDING',
+                        totalAmount: totalAmount,
+                        shippingAddress: orderData.shippingAddress || '',
+                        originPort: orderData.originPort,
+                        destinationPort: orderData.destinationPort,
+                        containerType: orderData.containerType,
+                        estimatedShippingDate: orderData.estimatedShippingDate
+                    }
+                });
+                console.log('Order created with ID:', newOrder.id);
+                // Crear items de la orden
+                const createdOrderItems = yield Promise.all(orderItems.map(item => prisma.orderItem.create({
+                    data: {
+                        orderId: newOrder.id,
+                        productId: item.productId,
+                        containerQuantity: item.containerQuantity,
+                        pricePerContainer: item.pricePerContainer,
+                        totalPrice: item.totalPrice
+                    }
+                })));
+                console.log('Created', createdOrderItems.length, 'order items');
+                // Limpiar carrito
+                yield cartService_1.CartService.clearCart(userIdNum);
+                console.log('Cart cleared');
+                // Actualizar stock de productos
+                for (const cartItem of cart.items) {
+                    yield prisma.product.update({
+                        where: { id: cartItem.productId },
+                        data: {
+                            stockContainers: {
+                                decrement: cartItem.containerQuantity
+                            }
+                        }
+                    });
+                }
+                console.log('Order created successfully');
+                return {
+                    order: newOrder,
+                    items: createdOrderItems
+                };
             }
-            newOrder.items = orderItems;
-            mockOrders.push(newOrder);
-            // Limpiar carrito
-            yield cartService_1.CartService.clearCart(userId);
-            return newOrder;
+            catch (error) {
+                console.error('Error creating order:', error);
+                throw error;
+            }
         });
     }
+    /**
+     * Crear orden con integración de shipping desde carrito
+     */
+    static createOrderWithShipping(cartId, userId, orderData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const userIdNum = typeof userId === 'string' ? parseInt(userId) : userId;
+                console.log('Creating order with shipping for user:', userIdNum);
+                console.log('Order data:', orderData);
+                // Obtener carrito del usuario
+                const cart = yield cartService_1.CartService.getCart(userIdNum);
+                console.log('User cart:', cart);
+                if (!cart || cart.items.length === 0) {
+                    throw new Error('El carrito esta vacio');
+                }
+                // Calcular peso y volumen total para shipping
+                let totalWeight = 0;
+                let totalVolume = 0;
+                for (const cartItem of cart.items) {
+                    const product = yield prisma.product.findUnique({
+                        where: { id: cartItem.productId }
+                    });
+                    if (product) {
+                        // Estimaciones de peso y volumen por contenedor
+                        const estimatedWeightPerContainer = 1000; // kg
+                        const estimatedVolumePerContainer = 50; // m³
+                        totalWeight += estimatedWeightPerContainer * cartItem.containerQuantity;
+                        totalVolume += estimatedVolumePerContainer * cartItem.containerQuantity;
+                    }
+                }
+                // Generar numero de orden unico
+                const orderNumber = `ORD-${Date.now()}-${userIdNum}`;
+                // Crear orden basica primero
+                const basicOrderResult = yield this.createOrder(cartId, userId, Object.assign(Object.assign({}, orderData), { requestShippingQuotes: true }));
+                // Si se requieren cotizaciones de shipping, generarlas
+                if (orderData.requestShippingQuotes) {
+                    const shippingRequest = {
+                        originPort: orderData.originPort || 'SHANGHAI',
+                        destinationPort: orderData.destinationPort || 'MIAMI',
+                        containerType: orderData.containerType || '20FT',
+                        containerCount: cart.items.reduce((sum, item) => sum + item.containerQuantity, 0),
+                        estimatedShippingDate: orderData.estimatedShippingDate || new Date(),
+                        cargoValue: basicOrderResult.order.totalAmount,
+                        incoterm: 'FOB'
+                    };
+                    // const shippingQuotes = await ShippingService.getShippingQuotes(shippingRequest, userIdNum);
+                    const shippingQuotes = []; // Mock for now
+                    return {
+                        order: basicOrderResult.order,
+                        items: basicOrderResult.items,
+                        shippingQuotes: shippingQuotes,
+                        message: `Orden creada exitosamente. Se generaron ${shippingQuotes.length} cotizaciones de flete.`
+                    };
+                }
+                return basicOrderResult;
+            }
+            catch (error) {
+                console.error('Error creating order with shipping:', error);
+                throw error;
+            }
+        });
+    }
+    /**
+     * Confirmar orden con cotización de shipping seleccionada
+     */
+    static confirmOrderWithShipping(orderId, shippingQuoteId) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                // Marcar la cotización como seleccionada
+                // await ShippingService.selectShippingQuote(shippingQuoteId, orderId);
+                console.log('ShippingService temporarily disabled'); // Mock for now
+                // Actualizar estado de la orden
+                const updatedOrder = yield prisma.order.update({
+                    where: { id: orderId },
+                    data: {
+                        status: 'CONFIRMED',
+                        updatedAt: new Date()
+                    },
+                    include: {
+                        items: {
+                            include: {
+                                product: true
+                            }
+                        }
+                    }
+                });
+                return {
+                    order: updatedOrder,
+                    message: 'Orden confirmada con shipping seleccionado'
+                };
+            }
+            catch (error) {
+                console.error('Error confirming order with shipping:', error);
+                throw error;
+            }
+        });
+    }
+    /**
+     * Obtener órdenes de un usuario
+     */
     static getOrdersByUserId(userId) {
         return __awaiter(this, void 0, void 0, function* () {
-            const userIdNum = parseInt(userId);
-            const userOrders = mockOrders.filter(order => order.userId === userIdNum);
-            // Obtener items para cada pedido
-            return yield Promise.all(userOrders.map((order) => __awaiter(this, void 0, void 0, function* () {
-                const items = mockOrderItems.filter(item => item.orderId === order.id);
-                const itemsWithProducts = yield Promise.all(items.map((item) => __awaiter(this, void 0, void 0, function* () {
-                    const product = yield productService_1.ProductService.getProductById(item.productId);
-                    return Object.assign(Object.assign({}, item), { product: product || undefined });
-                })));
-                return Object.assign(Object.assign({}, order), { items: itemsWithProducts });
-            })));
-        });
-    }
-    static getOrderById(orderId, userId) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const userIdNum = parseInt(userId);
-            const order = mockOrders.find(o => o.id === orderId && o.userId === userIdNum);
-            if (!order) {
-                return null;
+            try {
+                const userIdNum = typeof userId === 'string' ? parseInt(userId) : userId;
+                const orders = yield prisma.order.findMany({
+                    where: { userId: userIdNum },
+                    include: {
+                        items: {
+                            include: {
+                                product: true
+                            }
+                        }
+                    },
+                    orderBy: { createdAt: 'desc' }
+                });
+                return orders;
             }
-            // Obtener items del pedido
-            const items = mockOrderItems.filter(item => item.orderId === orderId);
-            const itemsWithProducts = yield Promise.all(items.map((item) => __awaiter(this, void 0, void 0, function* () {
-                const product = yield productService_1.ProductService.getProductById(item.productId);
-                return Object.assign(Object.assign({}, item), { product: product || undefined });
-            })));
-            return Object.assign(Object.assign({}, order), { items: itemsWithProducts });
+            catch (error) {
+                console.error('Error getting orders by user:', error);
+                throw error;
+            }
         });
     }
+    /**
+     * Obtener orden por ID
+     */
+    static getOrderById(orderId) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const order = yield prisma.order.findUnique({
+                    where: { id: orderId },
+                    include: {
+                        items: {
+                            include: {
+                                product: true
+                            }
+                        }
+                    }
+                });
+                if (!order) {
+                    throw new Error('Orden no encontrada');
+                }
+                return {
+                    id: order.id,
+                    userId: order.userId,
+                    status: order.status,
+                    totalAmount: order.totalAmount,
+                    shippingAddress: order.shippingAddress,
+                    items: order.items.map((item) => ({
+                        id: item.id,
+                        containerQuantity: item.containerQuantity,
+                        pricePerContainer: item.pricePerContainer,
+                        totalPrice: item.totalPrice,
+                        product: item.product
+                    })),
+                    createdAt: order.createdAt,
+                    updatedAt: order.updatedAt
+                };
+            }
+            catch (error) {
+                console.error('Error getting order by ID:', error);
+                throw error;
+            }
+        });
+    }
+    /**
+     * Actualizar estado de una orden
+     */
     static updateOrderStatus(orderId, status) {
         return __awaiter(this, void 0, void 0, function* () {
-            const order = mockOrders.find(o => o.id === orderId);
-            if (!order) {
-                throw new Error('Pedido no encontrado');
+            try {
+                const updatedOrder = yield prisma.order.update({
+                    where: { id: orderId },
+                    data: {
+                        status,
+                        updatedAt: new Date()
+                    },
+                    include: {
+                        items: {
+                            include: {
+                                product: true
+                            }
+                        }
+                    }
+                });
+                return updatedOrder;
             }
-            order.status = status;
-            order.updatedAt = new Date();
-            return order;
+            catch (error) {
+                console.error('Error updating order status:', error);
+                throw error;
+            }
         });
     }
 }
 exports.OrderService = OrderService;
+exports.default = OrderService;

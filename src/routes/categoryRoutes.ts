@@ -1,12 +1,13 @@
 import { Router } from 'express';
-import { 
-  getCategories, 
-  getCategoryById, 
+import {
+  getCategories,
+  getCategoryById,
   getCategoryTree,
-  createCategory, 
-  updateCategory, 
-  deleteCategory 
+  createCategory,
+  updateCategory,
+  deleteCategory
 } from '../controllers/categoryPrismaController';
+import { getProductsByCategory } from '../controllers/productPgController';
 
 const router = Router();
 
@@ -29,5 +30,8 @@ router.put('/categories/:id', updateCategory);
 
 // DELETE /api/categories/:id - Eliminar categoría
 router.delete('/categories/:id', deleteCategory);
+
+// GET /api/categories/:id/products - Listar productos de categoría
+router.get('/categories/:id/products', getProductsByCategory);
 
 export default router;

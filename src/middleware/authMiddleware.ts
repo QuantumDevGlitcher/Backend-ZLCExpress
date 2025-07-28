@@ -153,3 +153,18 @@ export const requireSupplier = async (req: AuthenticatedRequest, res: Response, 
     next();
   });
 };
+
+export const checkRole = (role: string) => {
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    await requireAuth(req, res, () => {
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Información de usuario no disponible' });
+      }
+      const userType = (req.user.userType || '').toLowerCase();
+      if (userType !== role.toLowerCase()) {
+        return res.status(403).json({ success: false, message: 'Acceso restringido para rol ' + role });
+      }
+      next();
+    });
+  };
+};
